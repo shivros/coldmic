@@ -1,19 +1,67 @@
-# README
+# ColdMic (Tracer Bullet)
 
-## About
+ColdMic is a Wails + Go desktop app for intentional push-to-talk transcription.
 
-This is the official Wails Vanilla template.
+This tracer-bullet implementation provides an end-to-end path:
 
-You can configure the project by editing `wails.json`. More information about the project settings can be found
-here: https://wails.io/docs/reference/project-config
+- hold-to-talk recording
+- Deepgram low-latency streaming transcription
+- live partial transcript updates
+- deterministic substitution rules
+- final transcript copied to clipboard
 
-## Live Development
+## Current Scope
 
-To run in live development mode, run `wails dev` in the project directory. This will run a Vite development
-server that will provide very fast hot reload of your frontend changes. If you want to develop in a browser
-and have access to your Go methods, there is also a dev server that runs on http://localhost:34115. Connect
-to this in your browser, and you can call your Go code from devtools.
+This is the initial functional slice, not the full product.
 
-## Building
+- provider: Deepgram websocket streaming
+- recorder: `ffmpeg` microphone capture adapter (currently configured for Linux PulseAudio defaults)
+- frontend: in-app hold button and `Space` key hold behavior
 
-To build a redistributable, production mode package, use `wails build`.
+## Prerequisites
+
+- Go 1.23+
+- Node/npm
+- `ffmpeg` available in PATH
+- Deepgram API key
+
+## Configuration
+
+Environment variables:
+
+- `DEEPGRAM_API_KEY` (required)
+- `DEEPGRAM_API_BASE` (default: `https://api.deepgram.com/v1`)
+- `DEEPGRAM_MODEL` (default: `nova-2`)
+- `DEEPGRAM_LANGUAGE` (optional)
+- `DEEPGRAM_SMART_FORMAT` (default: `true`)
+- `COLDMIC_AUDIO_INPUT_FORMAT` (default: `pulse`)
+- `COLDMIC_AUDIO_INPUT_DEVICE` (default: `default`)
+- `COLDMIC_FFMPEG_COMMAND` (default: `ffmpeg`)
+- `COLDMIC_RULES_FILE` (optional custom substitutions path)
+
+Rules-file fallback order:
+
+1. `COLDMIC_RULES_FILE`
+2. `~/.config/coldmic/substitutions.rules`
+3. `~/.config/hypr/whisper-substitutions.rules`
+
+## Rules Format
+
+Rules support two line types:
+
+- literal replacement: `FROM => TO`
+- regex replacement: `s/regex/replacement/flags`
+
+Case-insensitive matching is enabled by default for regex rules unless explicitly set.
+
+## Development
+
+```bash
+wails dev
+```
+
+## Build
+
+```bash
+wails build
+```
