@@ -24,9 +24,9 @@ const (
 type App struct {
 	ctx context.Context
 
-	controller *usecase.SessionController
-	cfg        config.Config
-	bootErr    error
+	session *usecase.SessionService
+	cfg     config.Config
+	bootErr error
 }
 
 func NewApp() *App {
@@ -44,7 +44,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	a.cfg = services.Config
-	a.controller = services.Controller
+	a.session = services.Session
 	a.SessionStateChanged(domain.SessionStateIdle, domain.SessionReasonMicCold)
 }
 
@@ -53,11 +53,11 @@ func (a *App) StartPTT() (domain.Status, error) {
 	if err := a.requireReady(); err != nil {
 		return domain.Status{}, err
 	}
-	if err := a.controller.Start(a.ctx); err != nil {
+	if err := a.session.Start(a.ctx); err != nil {
 		a.SessionError(domain.ErrorCodeTranscription, err.Error())
 		return domain.Status{}, err
 	}
-	return a.controller.Status(), nil
+	return a.session.Status(), nil
 }
 
 // StopPTT stops recording and returns processed transcript output.
@@ -65,7 +65,7 @@ func (a *App) StopPTT() (domain.StopResult, error) {
 	if err := a.requireReady(); err != nil {
 		return domain.StopResult{}, err
 	}
-	result, err := a.controller.Stop(a.ctx)
+	result, err := a.session.Stop(a.ctx)
 	if err != nil {
 		a.SessionError(domain.ErrorCodeTranscription, err.Error())
 		return domain.StopResult{}, err
@@ -78,8 +78,8 @@ func (a *App) AbortPTT() error {
 	if err := a.requireReady(); err != nil {
 		return err
 	}
-	if err := a.controller.Abort(); err != nil {
-		if errors.Is(err, usecase.ErrNoActiveSession) {
+	if err := a.session.Abort(); err != nil {
+		if errors.Is(err, domain.ErrNoActiveSession) {
 			return nil
 		}
 		a.SessionError(domain.ErrorCodeTranscription, err.Error())
@@ -90,13 +90,13 @@ func (a *App) AbortPTT() error {
 
 // GetStatus returns the current session status.
 func (a *App) GetStatus() domain.Status {
-	if a.controller == nil {
+	if a.session == nil {
 		if a.bootErr != nil {
 			return domain.Status{State: domain.SessionStateError, Active: false, Message: a.bootErr.Error()}
 		}
 		return domain.Status{State: domain.SessionStateIdle, Active: false}
 	}
-	return a.controller.Status()
+	return a.session.Status()
 }
 
 // GetRuntimeInfo returns non-sensitive config for the UI.
@@ -119,7 +119,7 @@ func (a *App) requireReady() error {
 	if a.bootErr != nil {
 		return a.bootErr
 	}
-	if a.controller == nil {
+	if a.session == nil {
 		return fmt.Errorf("application is not initialized")
 	}
 	return nil

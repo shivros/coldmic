@@ -21,9 +21,12 @@ func TestBuildSuccess(t *testing.T) {
 	if services.Controller == nil {
 		t.Fatalf("expected controller")
 	}
+	if services.Session == nil {
+		t.Fatalf("expected session service")
+	}
 }
 
-func TestBuildFailsOnInvalidRules(t *testing.T) {
+func TestBuildSkipsInvalidRules(t *testing.T) {
 	home := t.TempDir()
 	rules := filepath.Join(home, "bad.rules")
 	if err := os.WriteFile(rules, []byte("not a valid rule\n"), 0o600); err != nil {
@@ -33,9 +36,15 @@ func TestBuildFailsOnInvalidRules(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("COLDMIC_RULES_FILE", rules)
 
-	_, err := Build(noopEventSink{}, noopClipboard{})
-	if err == nil {
-		t.Fatalf("expected build error due to invalid rules")
+	services, err := Build(noopEventSink{}, noopClipboard{})
+	if err != nil {
+		t.Fatalf("build should succeed even with invalid rules: %v", err)
+	}
+	if services.Controller == nil {
+		t.Fatalf("expected controller")
+	}
+	if services.Session == nil {
+		t.Fatalf("expected session service")
 	}
 }
 

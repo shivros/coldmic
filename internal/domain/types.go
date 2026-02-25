@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 // SessionState models the push-to-talk lifecycle.
 type SessionState string
 
@@ -58,6 +60,12 @@ type StopResult struct {
 	RawTranscript   string `json:"rawTranscript"`
 	FinalTranscript string `json:"finalTranscript"`
 	Copied          bool   `json:"copied"`
+}
+
+// LatestTranscript captures the most recent successful stop output.
+type LatestTranscript struct {
+	Result     StopResult `json:"result"`
+	CapturedAt time.Time  `json:"capturedAt"`
 }
 
 // Status summarizes the current runtime status.

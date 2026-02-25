@@ -12,6 +12,7 @@ import (
 // Services is the assembled runtime graph.
 type Services struct {
 	Controller *usecase.SessionController
+	Session    *usecase.SessionService
 	Config     config.Config
 }
 
@@ -57,5 +58,9 @@ func Build(eventSink ports.EventSink, clipboard ports.Clipboard) (Services, erro
 		},
 	)
 
-	return Services{Controller: controller, Config: cfg}, nil
+	return Services{
+		Controller: controller,
+		Session:    usecase.NewSessionService(controller),
+		Config:     cfg,
+	}, nil
 }

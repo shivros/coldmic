@@ -91,7 +91,7 @@ func TestSessionControllerStopWithoutActiveSession(t *testing.T) {
 	)
 
 	_, err := controller.Stop(context.Background())
-	if !errors.Is(err, ErrNoActiveSession) {
+	if !errors.Is(err, domain.ErrNoActiveSession) {
 		t.Fatalf("expected ErrNoActiveSession, got %v", err)
 	}
 }

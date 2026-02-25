@@ -10,8 +10,6 @@ import (
 	"coldmic/internal/ports"
 )
 
-var ErrNoActiveSession = errors.New("no active recording session")
-
 // Config controls tracer-bullet recording behavior.
 type Config struct {
 	Audio          ports.AudioConfig
@@ -183,7 +181,7 @@ func (c *SessionController) getCurrent() (*activeSession, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.current == nil {
-		return nil, ErrNoActiveSession
+		return nil, domain.ErrNoActiveSession
 	}
 	return c.current, nil
 }

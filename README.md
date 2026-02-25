@@ -38,6 +38,8 @@ Environment variables:
 - `COLDMIC_AUDIO_INPUT_DEVICE` (default: `default`)
 - `COLDMIC_FFMPEG_COMMAND` (default: `ffmpeg`)
 - `COLDMIC_RULES_FILE` (optional custom substitutions path)
+- `COLDMIC_DAEMON_ADDR` (daemon bind address, default: `127.0.0.1:4317`)
+- `COLDMIC_DAEMON_URL` (CLI daemon URL, default: `http://127.0.0.1:4317`)
 
 Rules-file fallback order:
 
@@ -59,6 +61,36 @@ Case-insensitive matching is enabled by default for regex rules unless explicitl
 ```bash
 wails dev
 ```
+
+## CLI + Daemon
+
+Run the local daemon (headless, no UI):
+
+```bash
+go run ./cmd/coldmicd --addr 127.0.0.1:4317
+```
+
+Control ColdMic from CLI:
+
+```bash
+go run ./cmd/coldmic start
+go run ./cmd/coldmic status
+go run ./cmd/coldmic stop
+go run ./cmd/coldmic transcript
+```
+
+JSON output is supported on each command:
+
+```bash
+go run ./cmd/coldmic status --json
+```
+
+Daemon HTTP API:
+
+- `POST /v1/session/start`
+- `POST /v1/session/stop`
+- `GET /v1/session/status`
+- `GET /v1/session/transcript/latest`
 
 ## Build
 
