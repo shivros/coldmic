@@ -7,8 +7,11 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(exitGeneric)
+		code, err := runNoCommand()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+		}
+		os.Exit(code)
 	}
 
 	cmd := os.Args[1]

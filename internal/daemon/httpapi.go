@@ -26,6 +26,7 @@ func (a *API) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/session/start", a.handleStart)
 	mux.HandleFunc("/v1/session/stop", a.handleStop)
+	mux.HandleFunc("/v1/session/abort", a.handleAbort)
 	mux.HandleFunc("/v1/session/status", a.handleStatus)
 	mux.HandleFunc("/v1/session/transcript/latest", a.handleLatestTranscript)
 	return mux
@@ -70,6 +71,24 @@ func (a *API) handleStop(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, StatusResponse{OK: true, Status: a.service.Status()})
+}
+
+func (a *API) handleAbort(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+		return
+	}
+
+	if err := a.service.Abort(); err != nil {
+		if errors.Is(err, domain.ErrNoActiveSession) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 

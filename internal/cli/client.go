@@ -58,6 +58,14 @@ func (c *Client) Stop(ctx context.Context) (domain.Status, domain.StopResult, er
 	return env.Status, env.Result, nil
 }
 
+func (c *Client) Abort(ctx context.Context) (domain.Status, error) {
+	var env envelope
+	if err := c.call(ctx, http.MethodPost, "/v1/session/abort", nil, &env); err != nil {
+		return domain.Status{}, err
+	}
+	return env.Status, nil
+}
+
 func (c *Client) Status(ctx context.Context) (domain.Status, error) {
 	var env envelope
 	if err := c.call(ctx, http.MethodGet, "/v1/session/status", nil, &env); err != nil {

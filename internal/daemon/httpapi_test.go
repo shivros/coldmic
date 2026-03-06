@@ -95,6 +95,63 @@ func TestAPIStopInternalError(t *testing.T) {
 	}
 }
 
+func TestAPIAbortConflict(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{abortErr: domain.ErrNoActiveSession}
+	api := NewAPI(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/session/abort", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+}
+
+func TestAPIAbortMethodNotAllowed(t *testing.T) {
+	t.Parallel()
+	api := NewAPI(&fakeService{})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/session/abort", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+}
+
+func TestAPIAbortInternalError(t *testing.T) {
+	t.Parallel()
+	api := NewAPI(&fakeService{abortErr: errors.New("boom")})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/session/abort", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+}
+
+func TestAPIAbortSuccess(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{status: domain.Status{State: domain.SessionStateIdle, Active: false}}
+	api := NewAPI(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/session/abort", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+	if svc.abortCalls != 1 {
+		t.Fatalf("expected abort call")
+	}
+}
+
 func TestAPIStatusSuccess(t *testing.T) {
 	t.Parallel()
 	api := NewAPI(&fakeService{status: domain.Status{State: domain.SessionStateIdle}})
@@ -198,8 +255,10 @@ func TestAPILatestTranscriptSuccess(t *testing.T) {
 
 type fakeService struct {
 	startCalls int
+	abortCalls int
 	startErr   error
 	stopErr    error
+	abortErr   error
 	lastErr    error
 	status     domain.Status
 	stopResult domain.StopResult
@@ -216,6 +275,11 @@ func (f *fakeService) Stop(context.Context) (domain.StopResult, error) {
 		return domain.StopResult{}, f.stopErr
 	}
 	return f.stopResult, nil
+}
+
+func (f *fakeService) Abort() error {
+	f.abortCalls++
+	return f.abortErr
 }
 
 func (f *fakeService) Status() domain.Status {

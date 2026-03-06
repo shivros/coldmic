@@ -76,6 +76,7 @@ Control ColdMic from CLI:
 go run ./cmd/coldmic start
 go run ./cmd/coldmic status
 go run ./cmd/coldmic stop
+go run ./cmd/coldmic abort
 go run ./cmd/coldmic transcript
 ```
 
@@ -85,10 +86,32 @@ JSON output is supported on each command:
 go run ./cmd/coldmic status --json
 ```
 
+Script-friendly status check (no stdout payload):
+
+```bash
+go run ./cmd/coldmic status --check
+# exit 0 when active, exit 1 when idle
+```
+
+Optional no-arg toggle compatibility mode:
+
+```bash
+export COLDMIC_TOGGLE_COMPAT=true
+go run ./cmd/coldmic
+```
+
+When enabled, no-arg CLI invocation checks current status and toggles:
+
+- idle -> `start`
+- active -> `stop`
+
+When `COLDMIC_TOGGLE_COMPAT` is unset or not `true`, no-arg invocation keeps strict behavior and prints usage with an error.
+
 Daemon HTTP API:
 
 - `POST /v1/session/start`
 - `POST /v1/session/stop`
+- `POST /v1/session/abort`
 - `GET /v1/session/status`
 - `GET /v1/session/transcript/latest`
 

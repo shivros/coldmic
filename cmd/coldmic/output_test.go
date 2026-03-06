@@ -19,6 +19,16 @@ func TestPrintStatus(t *testing.T) {
 	}
 }
 
+func TestPrintStatusWithMessage(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	printStatus(&buf, domain.Status{State: domain.SessionStateRecording, Active: true, Message: "in-progress"})
+	if !strings.Contains(buf.String(), "message=in-progress") {
+		t.Fatalf("unexpected output: %s", buf.String())
+	}
+}
+
 func TestPrintStopResult(t *testing.T) {
 	t.Parallel()
 
