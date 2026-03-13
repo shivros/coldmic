@@ -72,6 +72,7 @@ export function createAppController({ elements, api, formatErrorMessage, history
   let holdPointer = false;
   let holdSpace = false;
   let transitionLock = false;
+  const committedSessionIds = new Set();
 
   function updateStatus(state, message = '') {
     currentState = state;
@@ -109,6 +110,23 @@ export function createAppController({ elements, api, formatErrorMessage, history
     }
   }
 
+  function commitFinalTranscript({ text, sessionId }) {
+    const transformed = String(text || '').trim();
+    if (!transformed) {
+      return;
+    }
+    const normalizedSessionId = String(sessionId || '').trim();
+    if (normalizedSessionId) {
+      if (committedSessionIds.has(normalizedSessionId)) {
+        return;
+      }
+      committedSessionIds.add(normalizedSessionId);
+    }
+
+    elements.finalTranscript.textContent = transformed;
+    addHistory(transformed);
+  }
+
   async function startRecording() {
     if (transitionLock || currentState === 'recording' || currentState === 'stopping') {
       return;
@@ -141,8 +159,10 @@ export function createAppController({ elements, api, formatErrorMessage, history
       const result = await api.StopPTT();
       const transformed = result?.finalTranscript || '';
       if (transformed) {
-        elements.finalTranscript.textContent = transformed;
-        addHistory(transformed);
+        commitFinalTranscript({
+          text: transformed,
+          sessionId: result?.sessionId,
+        });
       }
     } catch (err) {
       showError(normalizeError(err));
@@ -227,11 +247,10 @@ export function createAppController({ elements, api, formatErrorMessage, history
 
   function onFinal(payload) {
     const data = payload || {};
-    const transformed = (data.transformed || '').trim();
-    if (transformed) {
-      elements.finalTranscript.textContent = transformed;
-      addHistory(transformed);
-    }
+    commitFinalTranscript({
+      text: data.transformed,
+      sessionId: data.sessionId,
+    });
   }
 
   function onError(payload) {

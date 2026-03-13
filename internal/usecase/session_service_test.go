@@ -34,8 +34,12 @@ func TestSessionServiceCachesLastTranscript(t *testing.T) {
 		t.Fatalf("start failed: %v", err)
 	}
 
-	if _, err := service.Stop(context.Background()); err != nil {
+	result, err := service.Stop(context.Background())
+	if err != nil {
 		t.Fatalf("stop failed: %v", err)
+	}
+	if result.SessionID == "" {
+		t.Fatalf("expected non-empty session id on stop result")
 	}
 
 	latest, err := service.LastTranscript()
@@ -45,6 +49,9 @@ func TestSessionServiceCachesLastTranscript(t *testing.T) {
 
 	if latest.Result.FinalTranscript != "TEXT" {
 		t.Fatalf("unexpected transcript: %+v", latest.Result)
+	}
+	if latest.Result.SessionID != result.SessionID {
+		t.Fatalf("expected session id %q to persist in latest transcript, got %q", result.SessionID, latest.Result.SessionID)
 	}
 	if latest.CapturedAt.IsZero() {
 		t.Fatalf("expected capture timestamp")

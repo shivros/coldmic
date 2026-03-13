@@ -89,7 +89,7 @@ func TestNoopEventSinkMethods(t *testing.T) {
 	var sink NoopEventSink
 	sink.SessionStateChanged("idle", "mic_cold")
 	sink.PartialTranscript("partial")
-	sink.FinalTranscript("raw", "final")
+	sink.FinalTranscript("raw", "final", "session-1")
 	sink.SessionError("transcription", "detail")
 }
 

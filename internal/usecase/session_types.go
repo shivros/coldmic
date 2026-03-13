@@ -8,6 +8,7 @@ import (
 )
 
 type activeSession struct {
+	id     string
 	cancel func()
 	audio  ports.AudioSession
 	stream ports.StreamingSession

@@ -51,6 +51,9 @@ func TestSessionControllerStartStopSuccess(t *testing.T) {
 	if !result.Copied {
 		t.Fatalf("expected copied=true")
 	}
+	if result.SessionID == "" {
+		t.Fatalf("expected non-empty session id")
+	}
 
 	if clipboard.lastText != "HELLO WORLD" {
 		t.Fatalf("clipboard did not receive transformed transcript")
@@ -61,6 +64,9 @@ func TestSessionControllerStartStopSuccess(t *testing.T) {
 	}
 	if len(events.finals) == 0 || events.finals[0].transformed != "HELLO WORLD" {
 		t.Fatalf("expected final transcript event")
+	}
+	if events.finals[0].sessionID != result.SessionID {
+		t.Fatalf("expected final event session id %q, got %q", result.SessionID, events.finals[0].sessionID)
 	}
 
 	states := events.snapshotStates()
@@ -265,6 +271,60 @@ func TestSessionControllerStartRestartStopsPreviousSession(t *testing.T) {
 	}
 }
 
+func TestSessionControllerStopAssignsUniqueSessionIDs(t *testing.T) {
+	t.Parallel()
+
+	firstStream := newFakeStreamingSession()
+	firstStream.events <- domain.TranscriptEvent{Kind: domain.TranscriptKindFinal, Text: "first"}
+	secondStream := newFakeStreamingSession()
+	secondStream.events <- domain.TranscriptEvent{Kind: domain.TranscriptKindFinal, Text: "second"}
+	firstAudio := &fakeAudioSession{chunks: [][]byte{[]byte("a")}}
+	secondAudio := &fakeAudioSession{chunks: [][]byte{[]byte("b")}}
+	events := &fakeEventSink{}
+
+	controller := NewSessionController(
+		&fakeAudioCapture{sessions: []ports.AudioSession{firstAudio, secondAudio}},
+		&fakeProvider{sessions: []ports.StreamingSession{firstStream, secondStream}},
+		&fakeRules{},
+		&fakeClipboard{},
+		events,
+		Config{},
+	)
+
+	if err := controller.Start(context.Background()); err != nil {
+		t.Fatalf("first start failed: %v", err)
+	}
+	first, err := controller.Stop(context.Background())
+	if err != nil {
+		t.Fatalf("first stop failed: %v", err)
+	}
+
+	if err := controller.Start(context.Background()); err != nil {
+		t.Fatalf("second start failed: %v", err)
+	}
+	second, err := controller.Stop(context.Background())
+	if err != nil {
+		t.Fatalf("second stop failed: %v", err)
+	}
+
+	if first.SessionID == "" || second.SessionID == "" {
+		t.Fatalf("expected non-empty session ids: first=%q second=%q", first.SessionID, second.SessionID)
+	}
+	if first.SessionID == second.SessionID {
+		t.Fatalf("expected unique session ids, got %q", first.SessionID)
+	}
+
+	if len(events.finals) != 2 {
+		t.Fatalf("expected 2 final events, got %d", len(events.finals))
+	}
+	if events.finals[0].sessionID != first.SessionID {
+		t.Fatalf("expected first final event session id %q, got %q", first.SessionID, events.finals[0].sessionID)
+	}
+	if events.finals[1].sessionID != second.SessionID {
+		t.Fatalf("expected second final event session id %q, got %q", second.SessionID, events.finals[1].sessionID)
+	}
+}
+
 func TestSessionControllerStatusActive(t *testing.T) {
 	t.Parallel()
 
@@ -438,6 +498,7 @@ type stateEvent struct {
 type finalEvent struct {
 	raw         string
 	transformed string
+	sessionID   string
 }
 
 type errEvent struct {
@@ -457,10 +518,10 @@ func (f *fakeEventSink) PartialTranscript(text string) {
 	f.partials = append(f.partials, text)
 }
 
-func (f *fakeEventSink) FinalTranscript(raw string, transformed string) {
+func (f *fakeEventSink) FinalTranscript(raw string, transformed string, sessionID string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.finals = append(f.finals, finalEvent{raw: raw, transformed: transformed})
+	f.finals = append(f.finals, finalEvent{raw: raw, transformed: transformed, sessionID: sessionID})
 }
 
 func (f *fakeEventSink) SessionError(code domain.ErrorCode, detail string) {

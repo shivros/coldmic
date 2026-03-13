@@ -52,6 +52,27 @@ func TestClientStopReturnsHTTPError(t *testing.T) {
 	}
 }
 
+func TestClientStopSuccessParsesSessionID(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/session/stop" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"status":{"state":"idle","active":false},"result":{"rawTranscript":"raw","finalTranscript":"final","copied":true,"sessionId":"session-901"}}`))
+	}))
+	defer server.Close()
+
+	_, result, err := NewClient(server.URL).Stop(context.Background())
+	if err != nil {
+		t.Fatalf("stop failed: %v", err)
+	}
+	if result.SessionID != "session-901" {
+		t.Fatalf("expected session id, got %+v", result)
+	}
+}
+
 func TestClientTranscriptSuccess(t *testing.T) {
 	t.Parallel()
 
@@ -60,7 +81,7 @@ func TestClientTranscriptSuccess(t *testing.T) {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"captured":"2026-02-25T12:00:00Z","result":{"rawTranscript":"raw","finalTranscript":"final","copied":true}}`))
+		_, _ = w.Write([]byte(`{"ok":true,"captured":"2026-02-25T12:00:00Z","result":{"rawTranscript":"raw","finalTranscript":"final","copied":true,"sessionId":"session-902"}}`))
 	}))
 	defer server.Close()
 
@@ -70,6 +91,9 @@ func TestClientTranscriptSuccess(t *testing.T) {
 	}
 	if capturedAt.IsZero() || result.FinalTranscript != "final" {
 		t.Fatalf("unexpected payload: %v %+v", capturedAt, result)
+	}
+	if result.SessionID != "session-902" {
+		t.Fatalf("expected session id in transcript payload, got %+v", result)
 	}
 }
 

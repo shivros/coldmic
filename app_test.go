@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -98,4 +99,79 @@ func TestGetStatusWhenNotInitialized(t *testing.T) {
 	if status.State != domain.SessionStateError || status.Active != false || status.Message != "boot" {
 		t.Fatalf("unexpected boot status: %+v", status)
 	}
+}
+
+func TestAppEventEmittersIncludeSessionID(t *testing.T) {
+	app := &App{ctx: context.Background()}
+	events := captureEvents(t)
+
+	app.SessionStateChanged(domain.SessionStateIdle, domain.SessionReasonMicCold)
+	app.PartialTranscript("partial")
+	app.FinalTranscript("raw", "final", "session-1")
+	app.SessionError(domain.ErrorCodeTranscription, "detail")
+
+	if len(*events) != 4 {
+		t.Fatalf("expected 4 emitted events, got %d", len(*events))
+	}
+
+	if (*events)[0].name != eventSession {
+		t.Fatalf("expected first event %q, got %q", eventSession, (*events)[0].name)
+	}
+	if (*events)[0].payload["state"] != string(domain.SessionStateIdle) {
+		t.Fatalf("unexpected session state payload: %+v", (*events)[0].payload)
+	}
+	if (*events)[1].name != eventPartial || (*events)[1].payload["text"] != "partial" {
+		t.Fatalf("unexpected partial event payload: %+v", (*events)[1])
+	}
+	if (*events)[2].name != eventFinal {
+		t.Fatalf("expected final event name %q, got %q", eventFinal, (*events)[2].name)
+	}
+	if (*events)[2].payload["sessionId"] != "session-1" {
+		t.Fatalf("expected sessionId in final payload, got %+v", (*events)[2].payload)
+	}
+	if (*events)[3].name != eventError || (*events)[3].payload["code"] != string(domain.ErrorCodeTranscription) {
+		t.Fatalf("unexpected error event payload: %+v", (*events)[3])
+	}
+}
+
+func TestAppEventEmittersNoopWithoutContext(t *testing.T) {
+	app := &App{}
+	events := captureEvents(t)
+
+	app.SessionStateChanged(domain.SessionStateIdle, domain.SessionReasonMicCold)
+	app.PartialTranscript("partial")
+	app.FinalTranscript("raw", "final", "session-2")
+	app.SessionError(domain.ErrorCodeTranscription, "detail")
+
+	if len(*events) != 0 {
+		t.Fatalf("expected no events when app context is nil, got %d", len(*events))
+	}
+}
+
+type emittedEvent struct {
+	name    string
+	payload map[string]string
+}
+
+func captureEvents(t *testing.T) *[]emittedEvent {
+	t.Helper()
+
+	events := []emittedEvent{}
+	original := eventsEmit
+	eventsEmit = func(_ context.Context, eventName string, optionalData ...interface{}) {
+		payload := map[string]string{}
+		if len(optionalData) > 0 {
+			if data, ok := optionalData[0].(map[string]string); ok {
+				for key, value := range data {
+					payload[key] = value
+				}
+			}
+		}
+		events = append(events, emittedEvent{name: eventName, payload: payload})
+	}
+
+	t.Cleanup(func() {
+		eventsEmit = original
+	})
+	return &events
 }

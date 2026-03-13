@@ -52,6 +52,10 @@ describe('app controller', () => {
     document.body.innerHTML = '';
   });
 
+  it('throws when app root element is missing', () => {
+    expect(() => renderApp(null)).toThrow('Missing root app element');
+  });
+
   it('updates status text and class for each state', () => {
     const { controller, elements } = createHarness();
 
@@ -94,6 +98,15 @@ describe('app controller', () => {
     expect(elements.statusPill.className).toContain('state-recording');
   });
 
+  it('does not start recording when already recording', async () => {
+    const { controller, api } = createHarness();
+
+    controller.updateStatus('recording');
+    await controller.startRecording();
+
+    expect(api.StartPTT).not.toHaveBeenCalled();
+  });
+
   it('shows an error when starting recording fails', async () => {
     const { controller, elements } = createHarness({
       api: {
@@ -108,10 +121,13 @@ describe('app controller', () => {
     expect(elements.statusPill.className).toContain('state-error');
   });
 
-  it('stops recording and persists final transcript', async () => {
+  it('stops recording and commits final transcript to history', async () => {
     const { controller, elements, api } = createHarness({
       api: {
-        StopPTT: vi.fn().mockResolvedValue({ finalTranscript: '  final line  ' }),
+        StopPTT: vi.fn().mockResolvedValue({
+          finalTranscript: '  final line  ',
+          sessionId: 'session-1',
+        }),
       },
     });
 
@@ -119,8 +135,48 @@ describe('app controller', () => {
     await controller.stopRecording();
 
     expect(api.StopPTT).toHaveBeenCalledTimes(1);
-    expect(elements.finalTranscript.textContent).toBe('  final line  ');
+    expect(elements.finalTranscript.textContent).toBe('final line');
+    expect(elements.historyList.children).toHaveLength(1);
     expect(elements.historyList.children[0].textContent).toBe('final line');
+  });
+
+  it('adds one history entry for a completed session when stop result and final event both arrive', async () => {
+    const { controller, elements } = createHarness({
+      api: {
+        StopPTT: vi.fn().mockResolvedValue({
+          finalTranscript: 'final line',
+          sessionId: 'session-1',
+        }),
+      },
+    });
+
+    controller.updateStatus('recording');
+    await controller.stopRecording();
+    controller.onFinal({ transformed: ' final line ', sessionId: 'session-1' });
+
+    expect(elements.historyList.children).toHaveLength(1);
+    expect(elements.historyList.children[0].textContent).toBe('final line');
+  });
+
+  it('deduplicates repeated final events for the same session id', () => {
+    const { controller, elements } = createHarness();
+
+    controller.onFinal({ transformed: 'same words', sessionId: 'session-7' });
+    controller.onFinal({ transformed: 'same words', sessionId: 'session-7' });
+
+    expect(elements.historyList.children).toHaveLength(1);
+    expect(elements.historyList.children[0].textContent).toBe('same words');
+  });
+
+  it('keeps separate history entries for different sessions with identical transcript text', () => {
+    const { controller, elements } = createHarness();
+
+    controller.onFinal({ transformed: 'same words', sessionId: 'session-8' });
+    controller.onFinal({ transformed: 'same words', sessionId: 'session-9' });
+
+    expect(elements.historyList.children).toHaveLength(2);
+    expect(elements.historyList.children[0].textContent).toBe('same words');
+    expect(elements.historyList.children[1].textContent).toBe('same words');
   });
 
   it('shows stop error when stopping fails', async () => {
@@ -135,6 +191,14 @@ describe('app controller', () => {
 
     expect(elements.errorEl.textContent).toBe('stop failed');
     expect(elements.statusMessage.textContent).toBe('Stop failed');
+  });
+
+  it('does not stop recording when not in recording state', async () => {
+    const { controller, api } = createHarness();
+
+    await controller.stopRecording();
+
+    expect(api.StopPTT).not.toHaveBeenCalled();
   });
 
   it('prevents and handles spacebar press outside text inputs', async () => {
@@ -176,6 +240,32 @@ describe('app controller', () => {
     expect(api.StopPTT).not.toHaveBeenCalled();
   });
 
+  it('ignores non-space keyboard interactions', async () => {
+    const { controller, api } = createHarness();
+
+    const shouldPreventDown = controller.onSpaceKeyDown({
+      code: 'Enter',
+      repeat: false,
+      activeTagName: 'DIV',
+    });
+    const shouldPreventUp = controller.onSpaceKeyUp({ code: 'Enter' });
+
+    await flushPromises();
+    expect(shouldPreventDown).toBe(false);
+    expect(shouldPreventUp).toBe(false);
+    expect(api.StartPTT).not.toHaveBeenCalled();
+    expect(api.StopPTT).not.toHaveBeenCalled();
+  });
+
+  it('does not commit empty final transcript payloads', () => {
+    const { controller, elements } = createHarness();
+
+    controller.onFinal({ transformed: '   ', sessionId: 'session-empty' });
+
+    expect(elements.historyList.children).toHaveLength(0);
+    expect(elements.finalTranscript.textContent).toBe('No transcript yet.');
+  });
+
   it('handles session, partial, final, and error events', () => {
     const { controller, elements, formatErrorMessage } = createHarness({
       api: {
@@ -190,13 +280,23 @@ describe('app controller', () => {
     controller.onPartial({ text: ' partial words ' });
     expect(elements.liveTranscript.textContent).toBe('partial words');
 
-    controller.onFinal({ transformed: ' final words ' });
+    controller.onFinal({ transformed: ' final words ', sessionId: 'session-3' });
     expect(elements.finalTranscript.textContent).toBe('final words');
 
     controller.onError({ message: 'Network down' });
     expect(formatErrorMessage).toHaveBeenCalledTimes(1);
     expect(elements.errorEl.textContent).toBe('Network down');
     expect(elements.statusPill.className).toContain('state-error');
+  });
+
+  it('does not force error status while actively recording', () => {
+    const { controller, elements } = createHarness();
+
+    controller.updateStatus('recording');
+    controller.onError({ message: 'network blip' });
+
+    expect(elements.statusPill.className).toContain('state-recording');
+    expect(elements.errorEl.textContent).toBe('network blip');
   });
 
   it('hydrates runtime metadata and startup errors', async () => {
@@ -250,5 +350,27 @@ describe('app controller', () => {
     expect(api.AbortPTT).toHaveBeenCalledTimes(1);
     expect(elements.statusMessage.textContent).toBe('Recording discarded');
     expect(elements.liveTranscript.textContent).toBe('Waiting for speech...');
+  });
+
+  it('endHold does nothing when hold is not active', async () => {
+    const { controller, api } = createHarness();
+
+    controller.endHold();
+    await flushPromises();
+
+    expect(api.StopPTT).not.toHaveBeenCalled();
+  });
+
+  it('returns controller state snapshot', () => {
+    const { controller } = createHarness();
+
+    const snapshot = controller.getStateSnapshot();
+
+    expect(snapshot).toEqual({
+      currentState: 'idle',
+      holdPointer: false,
+      holdSpace: false,
+      transitionLock: false,
+    });
   });
 });

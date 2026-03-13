@@ -52,7 +52,7 @@ type noopEventSink struct{}
 
 func (noopEventSink) SessionStateChanged(_ domain.SessionState, _ domain.SessionStateReason) {}
 func (noopEventSink) PartialTranscript(_ string)                                             {}
-func (noopEventSink) FinalTranscript(_, _ string)                                            {}
+func (noopEventSink) FinalTranscript(_, _, _ string)                                         {}
 func (noopEventSink) SessionError(_ domain.ErrorCode, _ string)                              {}
 
 type noopClipboard struct{}

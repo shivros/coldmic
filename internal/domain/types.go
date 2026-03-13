@@ -60,6 +60,7 @@ type StopResult struct {
 	RawTranscript   string `json:"rawTranscript"`
 	FinalTranscript string `json:"finalTranscript"`
 	Copied          bool   `json:"copied"`
+	SessionID       string `json:"sessionId,omitempty"`
 }
 
 // LatestTranscript captures the most recent successful stop output.

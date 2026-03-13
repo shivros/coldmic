@@ -95,6 +95,39 @@ func TestAPIStopInternalError(t *testing.T) {
 	}
 }
 
+func TestAPIStopSuccess(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{
+		status: domain.Status{State: domain.SessionStateIdle, Active: false},
+		stopResult: domain.StopResult{
+			RawTranscript:   "raw",
+			FinalTranscript: "final",
+			Copied:          true,
+			SessionID:       "session-55",
+		},
+	}
+	api := NewAPI(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/session/stop", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+
+	var body StopResponse
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if !body.OK {
+		t.Fatalf("expected ok=true")
+	}
+	if body.Result.SessionID != "session-55" {
+		t.Fatalf("expected session id to round-trip, got %+v", body.Result)
+	}
+}
+
 func TestAPIAbortConflict(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{abortErr: domain.ErrNoActiveSession}
@@ -228,6 +261,7 @@ func TestAPILatestTranscriptSuccess(t *testing.T) {
 				RawTranscript:   "raw",
 				FinalTranscript: "final",
 				Copied:          true,
+				SessionID:       "session-77",
 			},
 		},
 	}
@@ -250,6 +284,9 @@ func TestAPILatestTranscriptSuccess(t *testing.T) {
 	}
 	if body.Captured.IsZero() {
 		t.Fatalf("expected capture timestamp")
+	}
+	if body.Result.SessionID != "session-77" {
+		t.Fatalf("expected session id in latest transcript response, got %+v", body.Result)
 	}
 }
 

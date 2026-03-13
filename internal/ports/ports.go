@@ -62,6 +62,6 @@ type Clipboard interface {
 type EventSink interface {
 	SessionStateChanged(state domain.SessionState, reason domain.SessionStateReason)
 	PartialTranscript(text string)
-	FinalTranscript(raw string, transformed string)
+	FinalTranscript(raw string, transformed string, sessionID string)
 	SessionError(code domain.ErrorCode, detail string)
 }

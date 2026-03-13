@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -28,6 +29,7 @@ type SessionController struct {
 
 	mu      sync.Mutex
 	current *activeSession
+	nextID  uint64
 }
 
 func NewSessionController(
@@ -90,6 +92,8 @@ func (c *SessionController) Start(ctx context.Context) error {
 	}
 
 	c.mu.Lock()
+	c.nextID++
+	active.id = fmt.Sprintf("session-%d", c.nextID)
 	c.current = active
 	c.mu.Unlock()
 
@@ -149,7 +153,8 @@ func (c *SessionController) Stop(ctx context.Context) (domain.StopResult, error)
 		return domain.StopResult{}, err
 	}
 
-	c.events.FinalTranscript(result.RawTranscript, result.FinalTranscript)
+	result.SessionID = active.id
+	c.events.FinalTranscript(result.RawTranscript, result.FinalTranscript, result.SessionID)
 	c.finishSession(active, domain.SessionStateIdle, reason)
 	return result, nil
 }

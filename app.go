@@ -20,6 +20,8 @@ const (
 	eventError   = "coldmic:error"
 )
 
+var eventsEmit = runtime.EventsEmit
+
 // App is the Wails application root.
 type App struct {
 	ctx context.Context
@@ -130,7 +132,7 @@ func (a *App) SessionStateChanged(state domain.SessionState, reason domain.Sessi
 	if a.ctx == nil {
 		return
 	}
-	runtime.EventsEmit(a.ctx, eventSession, map[string]string{
+	eventsEmit(a.ctx, eventSession, map[string]string{
 		"state":   string(state),
 		"reason":  string(reason),
 		"message": sessionReasonMessage(reason),
@@ -142,17 +144,18 @@ func (a *App) PartialTranscript(text string) {
 	if a.ctx == nil {
 		return
 	}
-	runtime.EventsEmit(a.ctx, eventPartial, map[string]string{"text": text})
+	eventsEmit(a.ctx, eventPartial, map[string]string{"text": text})
 }
 
 // FinalTranscript emits final transcript output.
-func (a *App) FinalTranscript(raw string, transformed string) {
+func (a *App) FinalTranscript(raw string, transformed string, sessionID string) {
 	if a.ctx == nil {
 		return
 	}
-	runtime.EventsEmit(a.ctx, eventFinal, map[string]string{
+	eventsEmit(a.ctx, eventFinal, map[string]string{
 		"raw":         raw,
 		"transformed": transformed,
+		"sessionId":   sessionID,
 	})
 }
 
@@ -161,7 +164,7 @@ func (a *App) SessionError(code domain.ErrorCode, detail string) {
 	if a.ctx == nil {
 		return
 	}
-	runtime.EventsEmit(a.ctx, eventError, map[string]string{
+	eventsEmit(a.ctx, eventError, map[string]string{
 		"code":    string(code),
 		"message": errorMessage(code, detail),
 		"detail":  detail,
