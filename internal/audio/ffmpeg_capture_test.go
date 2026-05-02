@@ -13,8 +13,6 @@ import (
 )
 
 func TestFFMPEGCaptureStartReadAndStop(t *testing.T) {
-	t.Parallel()
-
 	script := writeScript(t, "capture.sh", "#!/usr/bin/env bash\nprintf 'hello'\nsleep 2\n")
 	capture := NewFFMPEGCapture(script)
 
@@ -38,8 +36,6 @@ func TestFFMPEGCaptureStartReadAndStop(t *testing.T) {
 }
 
 func TestFFMPEGCaptureStartEarlyExit(t *testing.T) {
-	t.Parallel()
-
 	script := writeScript(t, "fail.sh", "#!/usr/bin/env bash\necho 'boom' 1>&2\nexit 1\n")
 	capture := NewFFMPEGCapture(script)
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"coldmic/internal/debuglog"
 	"coldmic/internal/domain"
 	"coldmic/internal/ports"
 )
@@ -57,6 +59,7 @@ func (p *Provider) StartStreaming(ctx context.Context, cfg ports.StreamingConfig
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Deepgram websocket: %w", err)
 	}
+	debuglog.Printf("deepgram connected url=%s", wsURL)
 
 	session := &streamingSession{
 		conn:   conn,
@@ -163,11 +166,7 @@ func (s *streamingSession) setErr(err error) {
 	if err == nil {
 		return
 	}
-	if websocket.IsCloseError(err,
-		websocket.CloseNormalClosure,
-		websocket.CloseGoingAway,
-		websocket.CloseNoStatusReceived,
-	) {
+	if isExpectedShutdownErr(err) {
 		return
 	}
 
@@ -178,19 +177,41 @@ func (s *streamingSession) setErr(err error) {
 	}
 }
 
+func isExpectedShutdownErr(err error) bool {
+	if errors.Is(err, net.ErrClosed) || errors.Is(err, websocket.ErrCloseSent) {
+		return true
+	}
+
+	var closeErr *websocket.CloseError
+	if !errors.As(err, &closeErr) {
+		return false
+	}
+
+	switch closeErr.Code {
+	case websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *streamingSession) writeLoop() {
 	defer s.wg.Done()
 
 	for chunk := range s.audio {
 		if err := s.conn.WriteMessage(websocket.BinaryMessage, chunk); err != nil {
+			debuglog.Printf("deepgram audio send failed: %v", err)
 			s.setErr(fmt.Errorf("failed to send audio: %w", err))
 			return
 		}
 	}
 
 	if err := s.conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"CloseStream"}`)); err != nil {
+		debuglog.Printf("deepgram close stream failed: %v", err)
 		s.setErr(fmt.Errorf("failed to close stream: %w", err))
+		return
 	}
+	debuglog.Printf("deepgram sent CloseStream")
 }
 
 func (s *streamingSession) readLoop() {
@@ -199,13 +220,18 @@ func (s *streamingSession) readLoop() {
 	for {
 		_, payload, err := s.conn.ReadMessage()
 		if err != nil {
+			debuglog.Printf("deepgram read failed: %v", err)
 			s.setErr(fmt.Errorf("failed to read provider event: %w", err))
 			return
 		}
 
 		var response deepgramResponse
 		if err := json.Unmarshal(payload, &response); err != nil {
+			debuglog.Printf("deepgram ignored non-json payload bytes=%d", len(payload))
 			continue
+		}
+		if response.Type != "" {
+			debuglog.Printf("deepgram event type=%s is_final=%t speech_final=%t", response.Type, response.IsFinal, response.SpeechFinal)
 		}
 
 		if strings.EqualFold(response.Type, "Error") {
@@ -213,6 +239,7 @@ func (s *streamingSession) readLoop() {
 			if message == "" {
 				message = "deepgram returned an unknown error"
 			}
+			debuglog.Printf("deepgram error event message=%q", message)
 			s.emit(domain.TranscriptEvent{Kind: domain.TranscriptKindFinal, Text: "", IsSpeechFinal: true})
 			s.setErr(errors.New(message))
 			return
@@ -229,6 +256,7 @@ func (s *streamingSession) readLoop() {
 		} else {
 			event.Kind = domain.TranscriptKindPartial
 		}
+		debuglog.Printf("deepgram transcript kind=%s speech_final=%t text=%q", event.Kind, event.IsSpeechFinal, truncateForLog(transcript, 160))
 		s.emit(event)
 	}
 }
@@ -272,6 +300,13 @@ func extractTranscript(response deepgramResponse) string {
 		return strings.TrimSpace(response.Results.Channels[0].Alternatives[0].Transcript)
 	}
 	return ""
+}
+
+func truncateForLog(input string, max int) string {
+	if max <= 0 || len(input) <= max {
+		return input
+	}
+	return input[:max] + "..."
 }
 
 func buildListenURL(providerCfg Config, streamCfg ports.StreamingConfig) (string, error) {

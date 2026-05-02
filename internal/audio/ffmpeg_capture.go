@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"coldmic/internal/debuglog"
 	"coldmic/internal/ports"
 )
 
@@ -52,6 +53,14 @@ func (c *FFMPEGCapture) Start(ctx context.Context, cfg ports.AudioConfig) (ports
 		"-f", "s16le",
 		"-",
 	}
+	debuglog.Printf(
+		"ffmpeg start command=%s input_format=%s input_device=%s sample_rate=%d channels=%d",
+		c.command,
+		cfg.InputFormat,
+		cfg.InputDevice,
+		cfg.SampleRate,
+		cfg.Channels,
+	)
 
 	cmd := exec.CommandContext(ctx, c.command, args...)
 	var stderr bytes.Buffer
@@ -62,7 +71,11 @@ func (c *FFMPEGCapture) Start(ctx context.Context, cfg ports.AudioConfig) (ports
 		return nil, fmt.Errorf("failed to create ffmpeg stdout pipe: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
+		debuglog.Printf("ffmpeg failed to start: %v", err)
 		return nil, fmt.Errorf("failed to start ffmpeg: %w", err)
+	}
+	if cmd.Process != nil {
+		debuglog.Printf("ffmpeg started pid=%d", cmd.Process.Pid)
 	}
 
 	waitErr := make(chan error, 1)
@@ -74,8 +87,10 @@ func (c *FFMPEGCapture) Start(ctx context.Context, cfg ports.AudioConfig) (ports
 	select {
 	case err := <-waitErr:
 		if err != nil {
+			debuglog.Printf("ffmpeg exited before capture started: %v stderr=%q", err, stringsTrimSpaceSafe(stderr.String()))
 			return nil, fmt.Errorf("ffmpeg exited before capture started: %w: %s", err, stringsTrimSpaceSafe(stderr.String()))
 		}
+		debuglog.Printf("ffmpeg exited before capture started without error")
 		return nil, errors.New("ffmpeg exited before capture started")
 	case <-time.After(250 * time.Millisecond):
 	}
@@ -109,6 +124,7 @@ func (s *ffmpegSession) Close() error {
 
 func (s *ffmpegSession) Stop() error {
 	s.stopOnce.Do(func() {
+		debuglog.Printf("ffmpeg stop requested")
 		if s.process != nil {
 			_ = s.process.Signal(os.Interrupt)
 		}
@@ -137,6 +153,7 @@ func (s *ffmpegSession) Stop() error {
 		if s.stopErr != nil && s.stderr != nil && s.stderr.Len() > 0 {
 			s.stopErr = fmt.Errorf("%w: %s", s.stopErr, stringsTrimSpaceSafe(s.stderr.String()))
 		}
+		debuglog.Printf("ffmpeg stop completed err=%v", s.stopErr)
 	})
 
 	return s.stopErr

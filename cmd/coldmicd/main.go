@@ -14,6 +14,8 @@ import (
 
 	"coldmic/internal/bootstrap"
 	"coldmic/internal/daemon"
+	"coldmic/internal/debuglog"
+	"coldmic/internal/ports"
 )
 
 func main() {
@@ -21,10 +23,29 @@ func main() {
 	addr := flag.String("addr", addrDefault, "daemon bind address")
 	flag.Parse()
 
-	services, err := bootstrap.Build(daemon.NoopEventSink{}, daemon.SystemClipboard{})
+	var eventSink ports.EventSink = daemon.NoopEventSink{}
+	if debuglog.Enabled() {
+		eventSink = daemon.LoggingEventSink{}
+	}
+
+	services, err := bootstrap.Build(eventSink, daemon.SystemClipboard{})
 	if err != nil {
 		log.Fatalf("coldmicd bootstrap failed: %v", err)
 	}
+	debuglog.Printf(
+		"config provider=deepgram model=%s language=%q smart_format=%t audio_format=%s audio_device=%s sample_rate=%d channels=%d rules_file=%q chunk_size=%d streaming_grace_ms=%d api_key_set=%t",
+		services.Config.Deepgram.Model,
+		services.Config.Deepgram.Language,
+		services.Config.Deepgram.SmartFormat,
+		services.Config.Audio.InputFormat,
+		services.Config.Audio.InputDevice,
+		services.Config.Audio.SampleRate,
+		services.Config.Audio.Channels,
+		services.Config.Rules.Path,
+		services.Config.Session.ChunkSize,
+		services.Config.Session.StreamingGrace/time.Millisecond,
+		services.Config.Deepgram.APIKey != "",
+	)
 
 	api := daemon.NewAPI(services.Session)
 	srv := &http.Server{

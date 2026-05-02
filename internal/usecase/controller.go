@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"coldmic/internal/debuglog"
 	"coldmic/internal/domain"
 	"coldmic/internal/ports"
 )
@@ -67,19 +68,33 @@ func (c *SessionController) Start(ctx context.Context) error {
 		c.stopSession(previous)
 	}
 
+	debuglog.Printf(
+		"session start requested audio_format=%s audio_device=%s sample_rate=%d channels=%d chunk_size=%d streaming_grace_ms=%d",
+		c.cfg.Audio.InputFormat,
+		c.cfg.Audio.InputDevice,
+		c.cfg.Audio.SampleRate,
+		c.cfg.Audio.Channels,
+		c.cfg.ChunkSize,
+		c.cfg.StreamingGrace/time.Millisecond,
+	)
+
 	sessionCtx, cancel := context.WithCancel(ctx)
 	stream, err := c.provider.StartStreaming(sessionCtx, c.cfg.Streaming)
 	if err != nil {
 		cancel()
+		debuglog.Printf("session start failed during provider startup: %v", err)
 		return err
 	}
+	debuglog.Printf("session provider stream started")
 
 	audioSession, err := c.audio.Start(sessionCtx, c.cfg.Audio)
 	if err != nil {
 		_ = stream.Close()
 		cancel()
+		debuglog.Printf("session start failed during audio startup: %v", err)
 		return err
 	}
+	debuglog.Printf("session audio capture started")
 
 	active := &activeSession{
 		cancel:     cancel,
@@ -115,10 +130,13 @@ func (c *SessionController) Stop(ctx context.Context) (domain.StopResult, error)
 		return domain.StopResult{}, err
 	}
 
+	debuglog.Printf("session stop requested")
+
 	active.setState(domain.SessionStateStopping)
 	c.events.SessionStateChanged(domain.SessionStateStopping, domain.SessionReasonTranscribing)
 
 	if err := active.audio.Stop(); err != nil {
+		debuglog.Printf("session audio stop returned error: %v", err)
 		c.events.SessionError(domain.ErrorCodeAudioStop, "failed to stop audio capture cleanly")
 	}
 
@@ -137,12 +155,14 @@ func (c *SessionController) Stop(ctx context.Context) (domain.StopResult, error)
 	<-active.audioDone
 
 	raw := active.aggregator.Raw()
+	debuglog.Printf("session stop stream_err=%v raw_len=%d raw=%q", streamErr, len(raw), raw)
 	if raw == "" && streamErr != nil {
 		c.events.SessionError(domain.ErrorCodeTranscription, streamErr.Error())
 		c.finishSession(active, domain.SessionStateError, domain.SessionReasonTranscriptionFailed)
 		return domain.StopResult{}, streamErr
 	}
 	if raw == "" {
+		debuglog.Printf("session stop produced no transcript")
 		c.finishSession(active, domain.SessionStateIdle, domain.SessionReasonNoTranscript)
 		return domain.StopResult{}, errors.New("no transcript captured")
 	}
@@ -192,6 +212,7 @@ func (c *SessionController) getCurrent() (*activeSession, error) {
 }
 
 func (c *SessionController) stopSession(active *activeSession) {
+	debuglog.Printf("session teardown requested")
 	active.cancel()
 	_ = active.audio.Stop()
 	_ = active.stream.Close()

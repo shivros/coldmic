@@ -3,6 +3,8 @@ package deepgram
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"strings"
 	"testing"
 
@@ -149,6 +151,36 @@ func TestStreamingSessionSetErrIgnoresCloseErrors(t *testing.T) {
 	s.setErr(errors.New("boom"))
 	if s.waitErr() == nil || s.waitErr().Error() != "boom" {
 		t.Fatalf("expected non-close error to be captured")
+	}
+}
+
+func TestStreamingSessionSetErrIgnoresWrappedCloseErrors(t *testing.T) {
+	t.Parallel()
+
+	s := &streamingSession{}
+	s.setErr(fmt.Errorf("failed to read provider event: %w", &websocket.CloseError{
+		Code: websocket.CloseNormalClosure,
+		Text: "closed",
+	}))
+	if s.waitErr() != nil {
+		t.Fatalf("expected wrapped close error to be ignored")
+	}
+}
+
+func TestStreamingSessionSetErrIgnoresClosedConnectionErrors(t *testing.T) {
+	t.Parallel()
+
+	testCases := []error{
+		fmt.Errorf("failed to close stream: %w", net.ErrClosed),
+		fmt.Errorf("failed to send audio: %w", websocket.ErrCloseSent),
+	}
+
+	for _, err := range testCases {
+		s := &streamingSession{}
+		s.setErr(err)
+		if s.waitErr() != nil {
+			t.Fatalf("expected %q to be ignored", err)
+		}
 	}
 }
 

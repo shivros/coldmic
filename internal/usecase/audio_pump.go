@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"coldmic/internal/debuglog"
 	"coldmic/internal/domain"
 	"coldmic/internal/ports"
 )
@@ -23,17 +24,30 @@ func pumpAudioChunks(
 		chunkSize = 4096
 	}
 
+	var chunkCount int
+	var totalBytes int
+	defer func() {
+		debuglog.Printf("audio pump stopped chunks=%d bytes=%d", chunkCount, totalBytes)
+	}()
+
 	buf := make([]byte, chunkSize)
 	for {
 		n, err := audio.Read(buf)
 		if n > 0 {
+			chunkCount++
+			totalBytes += n
+			if chunkCount == 1 {
+				debuglog.Printf("audio pump first chunk bytes=%d", n)
+			}
 			if sendErr := stream.SendAudio(buf[:n]); sendErr != nil {
+				debuglog.Printf("audio pump send error after chunks=%d bytes=%d: %v", chunkCount, totalBytes, sendErr)
 				events.SessionError(domain.ErrorCodeAudioStream, fmt.Sprintf("failed to stream audio: %v", sendErr))
 				return
 			}
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
+				debuglog.Printf("audio pump read error after chunks=%d bytes=%d: %v", chunkCount, totalBytes, err)
 				events.SessionError(domain.ErrorCodeAudioStream, fmt.Sprintf("audio capture error: %v", err))
 			}
 			return
