@@ -99,6 +99,44 @@ solid complaint => SOLID-compliant
 	}
 }
 
+func TestEngineLiteralRuleUsesWordBoundariesForWordLikePhrases(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	rulesPath := filepath.Join(tmpDir, "substitutions.rules")
+
+	rules := `
+p r => PR
+`
+
+	if err := os.WriteFile(rulesPath, []byte(rules), 0o600); err != nil {
+		t.Fatalf("failed to write rules file: %v", err)
+	}
+
+	engine, err := NewEngine(rulesPath, 30)
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
+
+	output, err := engine.Apply("I keep running.")
+	if err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+
+	if output != "I keep running." {
+		t.Fatalf("unexpected cross-word replacement: %q", output)
+	}
+
+	output, err = engine.Apply("Need a p r review.")
+	if err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+
+	if output != "Need a PR review." {
+		t.Fatalf("expected standalone phrase replacement, got %q", output)
+	}
+}
+
 func TestEngineSupportsParserExtension(t *testing.T) {
 	t.Parallel()
 
@@ -158,9 +196,43 @@ func TestParseRegexRuleUnsupportedFlag(t *testing.T) {
 func TestParseRulesUnsupportedLine(t *testing.T) {
 	t.Parallel()
 
-	_, err := parseRules("not-a-rule", defaultRuleParsers())
-	if err == nil {
-		t.Fatalf("expected unsupported rule format error")
+	rules := parseRules("not-a-rule", defaultRuleParsers())
+	if len(rules) != 0 {
+		t.Fatalf("expected 0 rules, got %d", len(rules))
+	}
+}
+
+func TestEngineSkipsInvalidRules(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	rulesPath := filepath.Join(tmpDir, "substitutions.rules")
+
+	rules := `
+# valid rule
+hello => hi
+# invalid regex with unsupported Perl syntax
+s/(?!foo)/bar/
+# another valid rule
+world => earth
+`
+
+	if err := os.WriteFile(rulesPath, []byte(rules), 0o600); err != nil {
+		t.Fatalf("failed to write rules file: %v", err)
+	}
+
+	engine, err := NewEngine(rulesPath, 30)
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
+
+	output, err := engine.Apply("hello world")
+	if err != nil {
+		t.Fatalf("apply failed: %v", err)
+	}
+
+	if output != "hi earth" {
+		t.Fatalf("unexpected output: %q", output)
 	}
 }
 

@@ -3,9 +3,11 @@ package rules
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 type compiledRule interface {
@@ -50,10 +52,7 @@ func NewEngineWithParsers(path string, loopLimit int, parsers []RuleParser) (*En
 		return nil, fmt.Errorf("failed to read rules file %q: %w", path, err)
 	}
 
-	rules, err := parseRules(string(contents), parsers)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse rules file %q: %w", path, err)
-	}
+	rules := parseRules(string(contents), parsers)
 
 	return &Engine{rules: rules, loopLimit: loopLimit}, nil
 }
@@ -82,7 +81,7 @@ func (e *Engine) Apply(text string) (string, error) {
 	return result, nil
 }
 
-func parseRules(contents string, parsers []RuleParser) ([]compiledRule, error) {
+func parseRules(contents string, parsers []RuleParser) []compiledRule {
 	lines := strings.Split(contents, "\n")
 	rules := make([]compiledRule, 0, len(lines))
 
@@ -99,7 +98,9 @@ func parseRules(contents string, parsers []RuleParser) ([]compiledRule, error) {
 			}
 			rule, err := parser.Parse(line)
 			if err != nil {
-				return nil, fmt.Errorf("line %d: %w", index+1, err)
+				log.Printf("warning: skipping invalid rule at line %d: %v", index+1, err)
+				parsed = true
+				break
 			}
 			rules = append(rules, rule)
 			parsed = true
@@ -107,11 +108,11 @@ func parseRules(contents string, parsers []RuleParser) ([]compiledRule, error) {
 		}
 
 		if !parsed {
-			return nil, fmt.Errorf("line %d: unsupported rule format", index+1)
+			log.Printf("warning: skipping unsupported rule format at line %d", index+1)
 		}
 	}
 
-	return rules, nil
+	return rules
 }
 
 func defaultRuleParsers() []RuleParser {
@@ -154,7 +155,15 @@ func parseLiteralRule(line string) (compiledRule, error) {
 		return nil, errors.New("literal rule source cannot be empty")
 	}
 
-	re, err := regexp.Compile("(?i)" + regexp.QuoteMeta(from))
+	pattern := regexp.QuoteMeta(from)
+	if startsWithWordChar(from) {
+		pattern = `\b` + pattern
+	}
+	if endsWithWordChar(from) {
+		pattern += `\b`
+	}
+
+	re, err := regexp.Compile("(?i)" + pattern)
 	if err != nil {
 		return nil, fmt.Errorf("invalid literal source: %w", err)
 	}
@@ -256,6 +265,26 @@ func (r regexRule) Apply(input string) (string, bool) {
 	replaced := r.re.ReplaceAllString(segment, r.replacement)
 	output := input[:loc[0]] + replaced + input[loc[1]:]
 	return output, output != input
+}
+
+func startsWithWordChar(value string) bool {
+	r, _ := utf8.DecodeRuneInString(value)
+	return isWordChar(r)
+}
+
+func endsWithWordChar(value string) bool {
+	r, _ := utf8.DecodeLastRuneInString(value)
+	return isWordChar(r)
+}
+
+func isWordChar(r rune) bool {
+	if r == utf8.RuneError {
+		return false
+	}
+	return r == '_' ||
+		(r >= 'a' && r <= 'z') ||
+		(r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9')
 }
 
 func parseDelimited(line string, start int, delim byte) (string, int, error) {
