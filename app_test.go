@@ -148,6 +148,28 @@ func TestAppEventEmittersNoopWithoutContext(t *testing.T) {
 	}
 }
 
+func TestBeforeCloseMinimisesWindowAndPreventsQuit(t *testing.T) {
+	t.Parallel()
+
+	app := &App{}
+	minimised := false
+
+	original := windowMinimise
+	windowMinimise = func(_ context.Context) {
+		minimised = true
+	}
+	t.Cleanup(func() {
+		windowMinimise = original
+	})
+
+	if prevent := app.beforeClose(context.Background()); !prevent {
+		t.Fatalf("expected close to be prevented")
+	}
+	if !minimised {
+		t.Fatalf("expected window to be minimised before preventing close")
+	}
+}
+
 type emittedEvent struct {
 	name    string
 	payload map[string]string

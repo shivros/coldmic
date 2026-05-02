@@ -21,6 +21,7 @@ const (
 )
 
 var eventsEmit = runtime.EventsEmit
+var windowMinimise = runtime.WindowMinimise
 
 // App is the Wails application root.
 type App struct {
@@ -48,6 +49,12 @@ func (a *App) startup(ctx context.Context) {
 	a.cfg = services.Config
 	a.session = services.Session
 	a.SessionStateChanged(domain.SessionStateIdle, domain.SessionReasonMicCold)
+}
+
+// beforeClose keeps the app running and minimizes the window instead.
+func (a *App) beforeClose(ctx context.Context) bool {
+	windowMinimise(ctx)
+	return true
 }
 
 // StartPTT starts push-to-talk recording.
