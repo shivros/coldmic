@@ -29,6 +29,31 @@ func TestAPIStart(t *testing.T) {
 	}
 }
 
+func TestAPIStartDetachesFromRequestContext(t *testing.T) {
+	t.Parallel()
+
+	reqCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	svc := &fakeService{status: domain.Status{State: domain.SessionStateRecording, Active: true}}
+	api := NewAPI(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/session/start", nil).WithContext(reqCtx)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	cancel()
+
+	if svc.startCtx == nil {
+		t.Fatalf("expected start context to be captured")
+	}
+	select {
+	case <-svc.startCtx.Done():
+		t.Fatalf("expected start context to outlive request context cancellation")
+	default:
+	}
+}
+
 func TestAPIStartMethodNotAllowed(t *testing.T) {
 	t.Parallel()
 	api := NewAPI(&fakeService{})
@@ -300,10 +325,12 @@ type fakeService struct {
 	status     domain.Status
 	stopResult domain.StopResult
 	latest     domain.LatestTranscript
+	startCtx   context.Context
 }
 
-func (f *fakeService) Start(context.Context) error {
+func (f *fakeService) Start(ctx context.Context) error {
 	f.startCalls++
+	f.startCtx = ctx
 	return f.startErr
 }
 

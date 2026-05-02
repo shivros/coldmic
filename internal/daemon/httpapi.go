@@ -38,7 +38,8 @@ func (a *API) handleStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := a.service.Start(r.Context()); err != nil {
+	// Recording sessions must outlive the HTTP request that started them.
+	if err := a.service.Start(context.WithoutCancel(r.Context())); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
