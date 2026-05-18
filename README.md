@@ -24,6 +24,8 @@ This is the initial functional slice, not the full product.
 - Node/npm
 - `ffmpeg` available in PATH
 - Deepgram API key
+- `lefthook` (for tracked git hooks; see https://lefthook.dev/installation/)
+- `gitleaks` (for staged secret scanning; see https://github.com/gitleaks/gitleaks?tab=readme-ov-file#installing)
 
 ## Configuration
 
@@ -58,6 +60,20 @@ Rules support two line types:
 Case-insensitive matching is enabled by default for regex rules unless explicitly set.
 
 ## Development
+
+Before your first commit in a fresh clone, install the tracked git hooks:
+
+```bash
+make install-hooks
+```
+
+Then verify the hook blocks a generated test key:
+
+```bash
+make verify-hooks
+```
+
+This enables staged secret scanning via `gitleaks protect --staged` on every commit.
 
 ```bash
 make dev

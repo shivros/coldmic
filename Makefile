@@ -12,7 +12,7 @@ FRONTEND_COVERAGE_FUNCTIONS_MIN ?= 80
 FRONTEND_COVERAGE_BRANCHES_MIN ?= 60
 GO_PACKAGES ?= $(shell go list ./... | grep -v '/frontend/node_modules/')
 
-.PHONY: build build-app build-cli install-cli dev test test-go test-go-race test-go-coverage ci-test-go \
+.PHONY: build build-app build-cli install-cli install-hooks verify-hooks dev test test-go test-go-race test-go-coverage ci-test-go \
 	test-frontend test-frontend-coverage \
 	lint lint-go lint-frontend gofmt-check go-vet staticcheck \
 	quality quality-go quality-frontend frontend-build \
@@ -39,6 +39,14 @@ build-cli:
 install-cli:
 	go install ./cmd/coldmic
 	go install ./cmd/coldmicd
+
+install-hooks:
+	@command -v lefthook >/dev/null || (echo "lefthook is required; install it first" && exit 1)
+	@command -v gitleaks >/dev/null || (echo "gitleaks is required; install it first" && exit 1)
+	lefthook install
+
+verify-hooks:
+	bash scripts/verify-secret-hook.sh
 
 dev:
 	wails dev
