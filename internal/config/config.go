@@ -15,6 +15,7 @@ type Config struct {
 	Audio    AudioConfig
 	Rules    RulesConfig
 	Session  SessionConfig
+	TTS      TTSConfig
 }
 
 type DeepgramConfig struct {
@@ -41,6 +42,14 @@ type RulesConfig struct {
 type SessionConfig struct {
 	ChunkSize      int
 	StreamingGrace time.Duration
+}
+
+type TTSConfig struct {
+	Engine     string
+	Voice      string
+	Rate       string
+	Volume     string
+	PlaybackCmd string
 }
 
 // Load resolves configuration from environment variables and sensible defaults.
@@ -84,6 +93,13 @@ func Load() (Config, error) {
 		Session: SessionConfig{
 			ChunkSize:      envOrDefaultInt("COLDMIC_AUDIO_CHUNK_SIZE", 4096),
 			StreamingGrace: time.Duration(firstNonNegativeInt("COLDMIC_STREAMING_GRACE_MS", "DEEPGRAM_STREAMING_GRACE_MS", 1000)) * time.Millisecond,
+		},
+		TTS: TTSConfig{
+			Engine:      envOrDefault("COLDMIC_TTS_ENGINE", "edge-tts"),
+			Voice:       envOrDefault("COLDMIC_TTS_VOICE", "en-US-AriaNeural"),
+			Rate:        envOrDefault("COLDMIC_TTS_RATE", "+0%"),
+			Volume:      envOrDefault("COLDMIC_TTS_VOLUME", "+0%"),
+			PlaybackCmd: envOrDefault("COLDMIC_TTS_PLAYBACK_CMD", "ffplay"),
 		},
 	}
 
