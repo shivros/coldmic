@@ -11,10 +11,11 @@ import (
 
 // Config stores runtime configuration for the tracer bullet.
 type Config struct {
-	Deepgram DeepgramConfig
-	Audio    AudioConfig
-	Rules    RulesConfig
-	Session  SessionConfig
+	Deepgram     DeepgramConfig
+	Audio        AudioConfig
+	Rules        RulesConfig
+	Session      SessionConfig
+	Conversation ConversationConfig
 }
 
 type DeepgramConfig struct {
@@ -41,6 +42,17 @@ type RulesConfig struct {
 type SessionConfig struct {
 	ChunkSize      int
 	StreamingGrace time.Duration
+}
+
+type ConversationConfig struct {
+	Provider     string
+	BaseURL      string
+	APIKey       string
+	Model        string
+	SystemPrompt string
+	Stream       bool
+	Timeout      time.Duration
+	MaxHistory   int
 }
 
 // Load resolves configuration from environment variables and sensible defaults.
@@ -84,6 +96,16 @@ func Load() (Config, error) {
 		Session: SessionConfig{
 			ChunkSize:      envOrDefaultInt("COLDMIC_AUDIO_CHUNK_SIZE", 4096),
 			StreamingGrace: time.Duration(firstNonNegativeInt("COLDMIC_STREAMING_GRACE_MS", "DEEPGRAM_STREAMING_GRACE_MS", 1000)) * time.Millisecond,
+		},
+		Conversation: ConversationConfig{
+			Provider:     envOrDefault("COLDMIC_CONVERSATION_BACKEND", "openai"),
+			BaseURL:      envOrDefault("COLDMIC_BACKEND_BASE_URL", "https://api.openai.com/v1"),
+			APIKey:       strings.TrimSpace(os.Getenv("COLDMIC_BACKEND_API_KEY")),
+			Model:        envOrDefault("COLDMIC_BACKEND_MODEL", "gpt-4o"),
+			SystemPrompt: envOrDefault("COLDMIC_BACKEND_SYSTEM_PROMPT", "You are a helpful voice assistant."),
+			Stream:       envOrDefaultBool("COLDMIC_BACKEND_STREAM", true),
+			Timeout:      envOrDefaultDuration("COLDMIC_BACKEND_TIMEOUT", 30*time.Second),
+			MaxHistory:   envOrDefaultInt("COLDMIC_BACKEND_MAX_HISTORY", 20),
 		},
 	}
 
@@ -158,6 +180,18 @@ func envOrDefaultBool(key string, fallback bool) bool {
 	default:
 		return fallback
 	}
+}
+
+func envOrDefaultDuration(key string, fallback time.Duration) time.Duration {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(value)
+	if err != nil {
+		return fallback
+	}
+	return d
 }
 
 func firstNonNegativeInt(primary string, secondary string, fallback int) int {
