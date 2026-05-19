@@ -4,9 +4,9 @@ import "context"
 
 // ConversationResponse is the result of a non-streaming backend call.
 type ConversationResponse struct {
-	Text     string `json:"text"`
+	Text      string `json:"text"`
 	SessionID string `json:"sessionId"`
-	Model    string `json:"model,omitempty"`
+	Model     string `json:"model,omitempty"`
 }
 
 // StreamChunk is a single chunk from a streaming backend response.

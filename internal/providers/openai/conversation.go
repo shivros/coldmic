@@ -21,11 +21,11 @@ import (
 
 // Precompiled regexes for stripMarkdown (avoid recompilation on every call).
 var (
-	reBoldItalic  = regexp.MustCompile(`\*{1,3}([^*]+)\*{1,3}`)
-	reHeaders     = regexp.MustCompile(`(?m)^#{1,6}\s+`)
-	reCodeBlocks  = regexp.MustCompile("```[\\s\\S]*?```")
-	reInlineCode  = regexp.MustCompile("`([^`]+)`")
-	reLinks       = regexp.MustCompile(`\[([^\]]+)\]\([^)]+\)`)
+	reBoldItalic = regexp.MustCompile(`\*{1,3}([^*]+)\*{1,3}`)
+	reHeaders    = regexp.MustCompile(`(?m)^#{1,6}\s+`)
+	reCodeBlocks = regexp.MustCompile("```[\\s\\S]*?```")
+	reInlineCode = regexp.MustCompile("`([^`]+)`")
+	reLinks      = regexp.MustCompile(`\[([^\]]+)\]\([^)]+\)`)
 )
 
 // maxRetries is the number of retry attempts for transient errors.

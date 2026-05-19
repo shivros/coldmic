@@ -14,10 +14,10 @@ import (
 
 // Services is the assembled runtime graph.
 type Services struct {
-	Controller     *usecase.SessionController
-	Session        *usecase.SessionService
-	Config         config.Config
-	Conversation   ports.ConversationBackend
+	Controller   *usecase.SessionController
+	Session      *usecase.SessionService
+	Config       config.Config
+	Conversation ports.ConversationBackend
 }
 
 // Build wires all backend dependencies for the current runtime.
