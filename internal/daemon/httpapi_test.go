@@ -316,16 +316,18 @@ func TestAPILatestTranscriptSuccess(t *testing.T) {
 }
 
 type fakeService struct {
-	startCalls int
-	abortCalls int
-	startErr   error
-	stopErr    error
-	abortErr   error
-	lastErr    error
-	status     domain.Status
-	stopResult domain.StopResult
-	latest     domain.LatestTranscript
-	startCtx   context.Context
+	startCalls    int
+	abortCalls    int
+	startErr      error
+	stopErr       error
+	abortErr      error
+	lastErr       error
+	status        domain.Status
+	stopResult    domain.StopResult
+	latest        domain.LatestTranscript
+	startCtx      context.Context
+	startContErr  error
+	stopContErr   error
 }
 
 func (f *fakeService) Start(ctx context.Context) error {
@@ -358,4 +360,100 @@ func (f *fakeService) LastTranscript() (domain.LatestTranscript, error) {
 		return domain.LatestTranscript{}, errors.New("missing")
 	}
 	return f.latest, nil
+}
+
+func (f *fakeService) StartContinuous(_ context.Context) error {
+	return f.startContErr
+}
+
+func (f *fakeService) StopContinuous() error {
+	return f.stopContErr
+}
+
+func TestAPIContinuousStartSuccess(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{
+		status: domain.Status{State: domain.SessionStateIdle, Active: false, Mode: "ptt"},
+	}
+	api := NewAPI(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/conversation/listen/start", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+}
+
+func TestAPIContinuousStartConflict(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{
+		status: domain.Status{State: domain.SessionStateContinuous, Active: true, Mode: "continuous"},
+	}
+	api := NewAPI(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/conversation/listen/start", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+}
+
+func TestAPIContinuousStartMethodNotAllowed(t *testing.T) {
+	t.Parallel()
+	api := NewAPI(&fakeService{})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/conversation/listen/start", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+}
+
+func TestAPIContinuousStopSuccess(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{
+		status: domain.Status{State: domain.SessionStateIdle, Active: false, Mode: "ptt"},
+	}
+	api := NewAPI(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/conversation/listen/stop", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+}
+
+func TestAPIContinuousStopConflict(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{stopContErr: domain.ErrNoContinuousSession}
+	api := NewAPI(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/conversation/listen/stop", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+}
+
+func TestAPIContinuousStopMethodNotAllowed(t *testing.T) {
+	t.Parallel()
+	api := NewAPI(&fakeService{})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/conversation/listen/stop", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
 }

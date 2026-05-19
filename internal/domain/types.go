@@ -2,14 +2,15 @@ package domain
 
 import "time"
 
-// SessionState models the push-to-talk lifecycle.
+// SessionState models the push-to-talk and continuous listening lifecycle.
 type SessionState string
 
 const (
-	SessionStateIdle      SessionState = "idle"
-	SessionStateRecording SessionState = "recording"
-	SessionStateStopping  SessionState = "stopping"
-	SessionStateError     SessionState = "error"
+	SessionStateIdle        SessionState = "idle"
+	SessionStateRecording   SessionState = "recording"
+	SessionStateStopping    SessionState = "stopping"
+	SessionStateError       SessionState = "error"
+	SessionStateContinuous  SessionState = "continuous"
 )
 
 // SessionStateReason provides a structured reason for state transitions.
@@ -74,4 +75,5 @@ type Status struct {
 	State   SessionState `json:"state"`
 	Active  bool         `json:"active"`
 	Message string       `json:"message,omitempty"`
+	Mode    string       `json:"mode,omitempty"` // "ptt" (push-to-talk) or "continuous"
 }
