@@ -64,6 +64,9 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      - name: Ensure frontend dist stub for Go embed
+        run: mkdir -p frontend/dist && echo '<!DOCTYPE html><html></html>' > frontend/dist/index.html
+
       - name: Run Go formatting, vet, and staticcheck
         run: make quality-go
 
@@ -98,6 +101,9 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+
+      - name: Ensure frontend dist stub for Go embed
+        run: mkdir -p frontend/dist && echo '<!DOCTYPE html><html></html>' > frontend/dist/index.html
 
       - name: Run Go test suite (race + coverage gate)
         run: make ci-test-go
