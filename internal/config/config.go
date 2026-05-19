@@ -45,10 +45,10 @@ type SessionConfig struct {
 }
 
 type TTSConfig struct {
-	Engine     string
-	Voice      string
-	Rate       string
-	Volume     string
+	Engine      string
+	Voice       string
+	Rate        string
+	Volume      string
 	PlaybackCmd string
 }
 
