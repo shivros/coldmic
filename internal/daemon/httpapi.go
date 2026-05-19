@@ -29,6 +29,8 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("/v1/session/abort", a.handleAbort)
 	mux.HandleFunc("/v1/session/status", a.handleStatus)
 	mux.HandleFunc("/v1/session/transcript/latest", a.handleLatestTranscript)
+	mux.HandleFunc("/v1/conversation/listen/start", a.handleContinuousStart)
+	mux.HandleFunc("/v1/conversation/listen/stop", a.handleContinuousStop)
 	return mux
 }
 
@@ -127,4 +129,44 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", contentTypeJSON)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func (a *API) handleContinuousStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+		return
+	}
+
+	// Quick check before spawning goroutine. The listener's Start() also checks
+	// under its own mutex, but this gives immediate HTTP feedback on conflict.
+	status := a.service.Status()
+	if status.Active && status.Mode == "continuous" {
+		writeError(w, http.StatusConflict, domain.ErrContinuousActive.Error())
+		return
+	}
+
+	// StartContinuous blocks for the session duration — run in a goroutine.
+	go func() {
+		_ = a.service.StartContinuous(context.WithoutCancel(r.Context()))
+	}()
+
+	writeJSON(w, http.StatusAccepted, StatusResponse{OK: true, Status: a.service.Status()})
+}
+
+func (a *API) handleContinuousStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+		return
+	}
+
+	if err := a.service.StopContinuous(); err != nil {
+		if errors.Is(err, domain.ErrNoContinuousSession) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, StatusResponse{OK: true, Status: a.service.Status()})
 }

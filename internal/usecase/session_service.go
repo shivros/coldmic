@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -10,7 +11,8 @@ import (
 
 // SessionService provides an application-level API for session lifecycle control.
 type SessionService struct {
-	controller *SessionController
+	controller         *SessionController
+	continuousListener *ContinuousListener
 
 	mu     sync.RWMutex
 	latest *domain.LatestTranscript
@@ -18,6 +20,14 @@ type SessionService struct {
 
 func NewSessionService(controller *SessionController) *SessionService {
 	return &SessionService{controller: controller}
+}
+
+// NewSessionServiceWithContinuous creates a SessionService with continuous listening support.
+func NewSessionServiceWithContinuous(controller *SessionController, listener *ContinuousListener) *SessionService {
+	return &SessionService{
+		controller:         controller,
+		continuousListener: listener,
+	}
 }
 
 func (s *SessionService) Start(ctx context.Context) error {
@@ -45,7 +55,18 @@ func (s *SessionService) Abort() error {
 }
 
 func (s *SessionService) Status() domain.Status {
-	return s.controller.Status()
+	// Check continuous listener first.
+	if s.continuousListener != nil && s.continuousListener.Running() {
+		return domain.Status{
+			State:  domain.SessionStateContinuous,
+			Active: true,
+			Mode:   "continuous",
+		}
+	}
+
+	status := s.controller.Status()
+	status.Mode = "ptt"
+	return status
 }
 
 func (s *SessionService) LastTranscript() (domain.LatestTranscript, error) {
@@ -55,4 +76,28 @@ func (s *SessionService) LastTranscript() (domain.LatestTranscript, error) {
 		return domain.LatestTranscript{}, domain.ErrNoTranscriptAvailable
 	}
 	return *s.latest, nil
+}
+
+// StartContinuous starts VAD-gated continuous listening. The listener runs in a
+// background goroutine and emits events on its Events() channel.
+func (s *SessionService) StartContinuous(ctx context.Context) error {
+	if s.continuousListener == nil {
+		return errors.New("continuous listening not configured")
+	}
+	// Start synchronously checks running state under its own mutex, preventing
+	// the double-start race that existed with the goroutine+Running() pattern.
+	// It blocks for the duration of the listening session (until ctx cancelled).
+	return s.continuousListener.Start(ctx)
+}
+
+// StopContinuous stops an active continuous listening session.
+func (s *SessionService) StopContinuous() error {
+	if s.continuousListener == nil {
+		return errors.New("continuous listening not configured")
+	}
+	if !s.continuousListener.Running() {
+		return domain.ErrNoContinuousSession
+	}
+	s.continuousListener.Stop()
+	return nil
 }

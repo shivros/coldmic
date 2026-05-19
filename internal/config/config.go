@@ -16,6 +16,7 @@ type Config struct {
 	Rules        RulesConfig
 	Session      SessionConfig
 	Conversation ConversationConfig
+	Continuous   ContinuousConfig
 }
 
 type DeepgramConfig struct {
@@ -53,6 +54,13 @@ type ConversationConfig struct {
 	Stream       bool
 	Timeout      time.Duration
 	MaxHistory   int
+}
+
+type ContinuousConfig struct {
+	WakePhrases  []string
+	VADThreshold float64
+	SilenceMs    int
+	FrameMs      int
 }
 
 // Load resolves configuration from environment variables and sensible defaults.
@@ -106,6 +114,12 @@ func Load() (Config, error) {
 			Stream:       envOrDefaultBool("COLDMIC_BACKEND_STREAM", true),
 			Timeout:      envOrDefaultDuration("COLDMIC_BACKEND_TIMEOUT", 30*time.Second),
 			MaxHistory:   envOrDefaultInt("COLDMIC_BACKEND_MAX_HISTORY", 20),
+		},
+		Continuous: ContinuousConfig{
+			WakePhrases:  parseWakePhrases(envOrDefault("COLDMIC_WAKE_PHRASES", "hey alice,alice")),
+			VADThreshold: envOrDefaultFloat("COLDMIC_VAD_THRESHOLD", 500),
+			SilenceMs:    envOrDefaultInt("COLDMIC_VAD_SILENCE_MS", 800),
+			FrameMs:      envOrDefaultInt("COLDMIC_VAD_FRAME_MS", 30),
 		},
 	}
 
@@ -206,4 +220,27 @@ func firstNonNegativeInt(primary string, secondary string, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+func parseWakePhrases(raw string) []string {
+	var result []string
+	for _, p := range strings.Split(raw, ",") {
+		p = strings.TrimSpace(strings.ToLower(p))
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+func envOrDefaultFloat(key string, fallback float64) float64 {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
