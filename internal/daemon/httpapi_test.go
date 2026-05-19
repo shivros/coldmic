@@ -316,18 +316,18 @@ func TestAPILatestTranscriptSuccess(t *testing.T) {
 }
 
 type fakeService struct {
-	startCalls    int
-	abortCalls    int
-	startErr      error
-	stopErr       error
-	abortErr      error
-	lastErr       error
-	status        domain.Status
-	stopResult    domain.StopResult
-	latest        domain.LatestTranscript
-	startCtx      context.Context
-	startContErr  error
-	stopContErr   error
+	startCalls   int
+	abortCalls   int
+	startErr     error
+	stopErr      error
+	abortErr     error
+	lastErr      error
+	status       domain.Status
+	stopResult   domain.StopResult
+	latest       domain.LatestTranscript
+	startCtx     context.Context
+	startContErr error
+	stopContErr  error
 }
 
 func (f *fakeService) Start(ctx context.Context) error {

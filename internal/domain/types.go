@@ -6,11 +6,11 @@ import "time"
 type SessionState string
 
 const (
-	SessionStateIdle        SessionState = "idle"
-	SessionStateRecording   SessionState = "recording"
-	SessionStateStopping    SessionState = "stopping"
-	SessionStateError       SessionState = "error"
-	SessionStateContinuous  SessionState = "continuous"
+	SessionStateIdle       SessionState = "idle"
+	SessionStateRecording  SessionState = "recording"
+	SessionStateStopping   SessionState = "stopping"
+	SessionStateError      SessionState = "error"
+	SessionStateContinuous SessionState = "continuous"
 )
 
 // SessionStateReason provides a structured reason for state transitions.

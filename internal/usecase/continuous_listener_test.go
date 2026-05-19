@@ -205,9 +205,9 @@ func TestContinuousListenerWakePhraseEmptyPhrases(t *testing.T) {
 // fakeEOFSession immediately returns EOF on Read.
 type fakeEOFSession struct{}
 
-func (f *fakeEOFSession) Read(_ []byte) (int, error)  { return 0, io.EOF }
-func (f *fakeEOFSession) Close() error                 { return nil }
-func (f *fakeEOFSession) Stop() error                  { return nil }
+func (f *fakeEOFSession) Read(_ []byte) (int, error) { return 0, io.EOF }
+func (f *fakeEOFSession) Close() error               { return nil }
+func (f *fakeEOFSession) Stop() error                { return nil }
 
 // fakeBlockingSession blocks on Read until done is closed.
 type fakeBlockingSession struct {
