@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os/exec"
 
 	"coldmic/internal/debuglog"
@@ -18,7 +17,7 @@ type Config struct {
 	Voice       string // voice name (default: "en-US-AriaNeural")
 	Rate        string // rate adjustment e.g. "+0%" (default: "+0%")
 	Volume      string // volume adjustment e.g. "+0%" (default: "+0%")
-	PlaybackCmd string // audio player (default: "ffplay")
+	PlaybackCmd string // audio player (default: "ffplay"). Must accept mp3 on stdin.
 }
 
 // Provider implements ports.TextToSpeech using the edge-tts CLI tool.
@@ -109,7 +108,9 @@ func (p *Provider) playAudio(ctx context.Context, audio []byte) error {
 		cmd.Stdin = bytes.NewReader(audio)
 		cmd.Stderr = &stderr
 	default:
-		// paplay, aplay, or any custom command — pipe audio to stdin
+		// Custom playback command — receives mp3 audio on stdin.
+		// Note: commands like paplay expect raw PCM/WAV, not mp3.
+		// Use ffplay (default), mpv, or a wrapper script for non-mp3 players.
 		cmd = exec.CommandContext(ctx, p.cfg.PlaybackCmd)
 		cmd.Stdin = bytes.NewReader(audio)
 		cmd.Stderr = &stderr
@@ -119,7 +120,7 @@ func (p *Provider) playAudio(ctx context.Context, audio []byte) error {
 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			return context.Canceled
+			return ctx.Err()
 		}
 		return fmt.Errorf("playback failed: %w: %s", err, stderr.String())
 	}
@@ -128,55 +129,11 @@ func (p *Provider) playAudio(ctx context.Context, audio []byte) error {
 	return nil
 }
 
-// compile-time check
-var _ ports.TextToSpeech = (*Provider)(nil)
-
-// SynthesizeViaPipe is an alternative synthesize implementation that pipes
-// text to edge-tts via stdin instead of command arguments, useful for very
-// long text that may exceed shell argument limits.
-func (p *Provider) SynthesizeViaPipe(ctx context.Context, text string) ([]byte, error) {
-	if text == "" {
-		return nil, nil
-	}
-
-	args := []string{
-		"--voice", p.cfg.Voice,
-		"--rate", p.cfg.Rate,
-		"--volume", p.cfg.Volume,
-		"--write-media", "-",
-	}
-
-	cmd := exec.CommandContext(ctx, p.cfg.Command, args...)
-	cmd.Stdin = bytes.NewReader([]byte(text))
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	debuglog.Printf("edge-tts synthesize-pipe voice=%s text_len=%d", p.cfg.Voice, len(text))
-
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		return nil, fmt.Errorf("edge-tts pipe failed: %w: %s", err, stderr.String())
-	}
-
-	audio := stdout.Bytes()
-	if len(audio) == 0 {
-		return nil, errors.New("edge-tts produced no audio output")
-	}
-
-	return audio, nil
-}
-
 // IsAvailable checks whether the edge-tts binary is in PATH.
 func (p *Provider) IsAvailable() bool {
 	_, err := exec.LookPath(p.cfg.Command)
 	return err == nil
 }
 
-// ReadAll is a helper for reading all audio from an io.Reader.
-func ReadAll(r io.Reader) ([]byte, error) {
-	return io.ReadAll(r)
-}
+// compile-time check
+var _ ports.TextToSpeech = (*Provider)(nil)
