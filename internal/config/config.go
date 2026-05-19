@@ -17,6 +17,7 @@ type Config struct {
 	Session      SessionConfig
 	Conversation ConversationConfig
 	Continuous   ContinuousConfig
+	TTS          TTSConfig
 }
 
 type DeepgramConfig struct {
@@ -61,6 +62,14 @@ type ContinuousConfig struct {
 	VADThreshold float64
 	SilenceMs    int
 	FrameMs      int
+}
+
+type TTSConfig struct {
+	Engine      string
+	Voice       string
+	Rate        string
+	Volume      string
+	PlaybackCmd string
 }
 
 // Load resolves configuration from environment variables and sensible defaults.
@@ -120,6 +129,13 @@ func Load() (Config, error) {
 			VADThreshold: envOrDefaultFloat("COLDMIC_VAD_THRESHOLD", 500),
 			SilenceMs:    envOrDefaultInt("COLDMIC_VAD_SILENCE_MS", 800),
 			FrameMs:      envOrDefaultInt("COLDMIC_VAD_FRAME_MS", 30),
+		},
+		TTS: TTSConfig{
+			Engine:      envOrDefault("COLDMIC_TTS_ENGINE", "edge-tts"),
+			Voice:       envOrDefault("COLDMIC_TTS_VOICE", "en-US-AriaNeural"),
+			Rate:        envOrDefault("COLDMIC_TTS_RATE", "+0%"),
+			Volume:      envOrDefault("COLDMIC_TTS_VOLUME", "+0%"),
+			PlaybackCmd: envOrDefault("COLDMIC_TTS_PLAYBACK_CMD", "ffplay"),
 		},
 	}
 
