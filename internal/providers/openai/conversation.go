@@ -19,6 +19,18 @@ import (
 	"coldmic/internal/ports"
 )
 
+// Precompiled regexes for stripMarkdown (avoid recompilation on every call).
+var (
+	reBoldItalic  = regexp.MustCompile(`\*{1,3}([^*]+)\*{1,3}`)
+	reHeaders     = regexp.MustCompile(`(?m)^#{1,6}\s+`)
+	reCodeBlocks  = regexp.MustCompile("```[\\s\\S]*?```")
+	reInlineCode  = regexp.MustCompile("`([^`]+)`")
+	reLinks       = regexp.MustCompile(`\[([^\]]+)\]\([^)]+\)`)
+)
+
+// maxRetries is the number of retry attempts for transient errors.
+const maxRetries = 3
+
 // Config controls the OpenAI-compatible conversation backend.
 type Config struct {
 	BaseURL      string
@@ -292,26 +304,16 @@ func (p *Provider) doRequest(ctx context.Context, body []byte, stream bool) (*ht
 
 	debuglog.Printf("conversation-backend request endpoint=%s model=%s stream=%t", endpoint, p.cfg.Model, stream)
 
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("backend request failed: %w", err)
-	}
-
-	return resp, nil
+	return doRequestWithRetry(ctx, p.client, req, maxRetries)
 }
 
 // stripMarkdown removes common markdown formatting from text for voice output.
 func stripMarkdown(text string) string {
-	// Bold/italic
-	text = regexp.MustCompile(`\*{1,3}([^*]+)\*{1,3}`).ReplaceAllString(text, "$1")
-	// Headers
-	text = regexp.MustCompile(`^#{1,6}\s+`).ReplaceAllString(text, "")
-	// Code blocks
-	text = regexp.MustCompile("```[\\s\\S]*?```").ReplaceAllString(text, "")
-	// Inline code
-	text = regexp.MustCompile("`([^`]+)`").ReplaceAllString(text, "$1")
-	// Links [text](url)
-	text = regexp.MustCompile(`\[([^\]]+)\]\([^)]+\)`).ReplaceAllString(text, "$1")
+	text = reBoldItalic.ReplaceAllString(text, "$1")
+	text = reHeaders.ReplaceAllString(text, "")
+	text = reCodeBlocks.ReplaceAllString(text, "")
+	text = reInlineCode.ReplaceAllString(text, "$1")
+	text = reLinks.ReplaceAllString(text, "$1")
 	return strings.TrimSpace(text)
 }
 
