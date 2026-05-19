@@ -1,7 +1,6 @@
 package openai
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -615,19 +614,4 @@ func TestSendMessage_SeparateSessionsIsolated(t *testing.T) {
 	}
 
 	_ = lastSystemPrompt
-}
-
-// ReadAll reads from reader until EOF. Copied for compatibility.
-func ReadAll(r io.Reader) ([]byte, error) {
-	return io.ReadAll(r)
-}
-
-// Helper to read SSE lines from response body (used in potential future tests).
-func readSSELines(body io.Reader) []string {
-	var lines []string
-	scanner := bufio.NewScanner(body)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-	return lines
 }
