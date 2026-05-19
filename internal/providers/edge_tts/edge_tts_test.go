@@ -190,6 +190,10 @@ func TestPlayContextCancellation(t *testing.T) {
 		t.Fatalf("failed to create mock player: %v", err)
 	}
 
+	// Give the filesystem a moment to release file handles; without this,
+	// fork/exec can race with the write and produce "text file busy".
+	time.Sleep(50 * time.Millisecond)
+
 	p := NewProvider(Config{
 		Command:     mockTTS,
 		PlaybackCmd: mockPlayer,
