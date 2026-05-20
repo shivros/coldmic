@@ -84,14 +84,14 @@ const (
 type ConversationStateReason string
 
 const (
-	ConvReasonWakeDetected  ConversationStateReason = "wake_detected"
-	ConvReasonSpeechReceived ConversationStateReason = "speech_received"
+	ConvReasonWakeDetected    ConversationStateReason = "wake_detected"
+	ConvReasonSpeechReceived  ConversationStateReason = "speech_received"
 	ConvReasonBackendResponse ConversationStateReason = "backend_response"
-	ConvReasonPlaybackDone  ConversationStateReason = "playback_done"
-	ConvReasonStopPhrase    ConversationStateReason = "stop_phrase"
-	ConvReasonSilenceTimeout ConversationStateReason = "silence_timeout"
-	ConvReasonManualStop    ConversationStateReason = "manual_stop"
-	ConvReasonError         ConversationStateReason = "error"
+	ConvReasonPlaybackDone    ConversationStateReason = "playback_done"
+	ConvReasonStopPhrase      ConversationStateReason = "stop_phrase"
+	ConvReasonSilenceTimeout  ConversationStateReason = "silence_timeout"
+	ConvReasonManualStop      ConversationStateReason = "manual_stop"
+	ConvReasonError           ConversationStateReason = "error"
 )
 
 // ConversationStatus summarizes the current conversation controller status.

@@ -108,8 +108,14 @@ func TestSynthesizeWithMockCommand(t *testing.T) {
 
 	script := "#!/bin/sh\n" +
 		"echo -n '" + string(mockAudio) + "'\n"
-	if err := os.WriteFile(mockTTS, []byte(script), 0o755); err != nil {
+	// Write to a temp file then rename atomically to avoid "text file busy"
+	// races on Linux where fork/exec can race with the filesystem flush.
+	tmpFile := filepath.Join(tmpDir, ".edge-tts.tmp")
+	if err := os.WriteFile(tmpFile, []byte(script), 0o755); err != nil {
 		t.Fatalf("failed to create mock: %v", err)
+	}
+	if err := os.Rename(tmpFile, mockTTS); err != nil {
+		t.Fatalf("failed to rename mock: %v", err)
 	}
 
 	p := NewProvider(Config{Command: mockTTS})

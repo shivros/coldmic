@@ -64,12 +64,12 @@ func NewConversationController(
 		cfg.StopPhrases = []string{"thanks alice", "that's all", "goodbye", "bye alice", "stop"}
 	}
 	return &ConversationController{
-		listener:     listener,
-		backend:      backend,
-		tts:          tts,
-		events:       events,
-		cfg:          cfg,
-		state:        domain.ConvStateIdle,
+		listener: listener,
+		backend:  backend,
+		tts:      tts,
+		events:   events,
+		cfg:      cfg,
+		state:    domain.ConvStateIdle,
 	}
 }
 

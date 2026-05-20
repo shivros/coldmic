@@ -54,7 +54,8 @@ func (noopEventSink) SessionStateChanged(_ domain.SessionState, _ domain.Session
 func (noopEventSink) PartialTranscript(_ string)                                             {}
 func (noopEventSink) FinalTranscript(_, _, _ string)                                         {}
 func (noopEventSink) SessionError(_ domain.ErrorCode, _ string)                              {}
-func (noopEventSink) ConversationStateChanged(_ domain.ConversationState, _ domain.ConversationStateReason) {}
+func (noopEventSink) ConversationStateChanged(_ domain.ConversationState, _ domain.ConversationStateReason) {
+}
 
 type noopClipboard struct{}
 

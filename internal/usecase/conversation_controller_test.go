@@ -89,9 +89,9 @@ type convStateChange struct {
 }
 
 func (m *mockConvEventSink) SessionStateChanged(_ domain.SessionState, _ domain.SessionStateReason) {}
-func (m *mockConvEventSink) PartialTranscript(_ string)                                               {}
-func (m *mockConvEventSink) FinalTranscript(_, _, _ string)                                           {}
-func (m *mockConvEventSink) SessionError(_ domain.ErrorCode, _ string)                                {}
+func (m *mockConvEventSink) PartialTranscript(_ string)                                             {}
+func (m *mockConvEventSink) FinalTranscript(_, _, _ string)                                         {}
+func (m *mockConvEventSink) SessionError(_ domain.ErrorCode, _ string)                              {}
 func (m *mockConvEventSink) ConversationStateChanged(state domain.ConversationState, reason domain.ConversationStateReason) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -114,11 +114,11 @@ func newTestController(backend ports.ConversationBackend, tts ports.TextToSpeech
 		SilenceTimeout: 30 * time.Second,
 	}
 	return &ConversationController{
-		backend:      backend,
-		tts:          tts,
-		events:       sink,
-		cfg:          cfg,
-		state: domain.ConvStateIdle,
+		backend: backend,
+		tts:     tts,
+		events:  sink,
+		cfg:     cfg,
+		state:   domain.ConvStateIdle,
 	}
 }
 
