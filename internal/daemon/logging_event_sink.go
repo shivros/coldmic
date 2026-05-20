@@ -24,3 +24,7 @@ func (LoggingEventSink) FinalTranscript(raw string, transformed string, sessionI
 func (LoggingEventSink) SessionError(code domain.ErrorCode, detail string) {
 	log.Printf("session error code=%s detail=%q", code, detail)
 }
+
+func (LoggingEventSink) ConversationStateChanged(state domain.ConversationState, reason domain.ConversationStateReason) {
+	log.Printf("conversation state=%s reason=%s", state, reason)
+}

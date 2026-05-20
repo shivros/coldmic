@@ -91,6 +91,7 @@ func TestNoopEventSinkMethods(t *testing.T) {
 	sink.PartialTranscript("partial")
 	sink.FinalTranscript("raw", "final", "session-1")
 	sink.SessionError("transcription", "detail")
+	sink.ConversationStateChanged("idle", "wake_detected")
 }
 
 func TestRunClipboardCommand(t *testing.T) {

@@ -64,4 +64,5 @@ type EventSink interface {
 	PartialTranscript(text string)
 	FinalTranscript(raw string, transformed string, sessionID string)
 	SessionError(code domain.ErrorCode, detail string)
+	ConversationStateChanged(state domain.ConversationState, reason domain.ConversationStateReason)
 }

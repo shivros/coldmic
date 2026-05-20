@@ -530,6 +530,10 @@ func (f *fakeEventSink) SessionError(code domain.ErrorCode, detail string) {
 	f.errors = append(f.errors, errEvent{code: code, detail: detail})
 }
 
+func (f *fakeEventSink) ConversationStateChanged(_ domain.ConversationState, _ domain.ConversationStateReason) {
+	// No-op for existing tests.
+}
+
 func (f *fakeEventSink) snapshotStates() []stateEvent {
 	f.mu.Lock()
 	defer f.mu.Unlock()

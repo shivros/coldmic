@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	eventSession = "coldmic:session"
-	eventPartial = "coldmic:partial"
-	eventFinal   = "coldmic:final"
-	eventError   = "coldmic:error"
+	eventSession      = "coldmic:session"
+	eventPartial      = "coldmic:partial"
+	eventFinal        = "coldmic:final"
+	eventError        = "coldmic:error"
+	eventConversation = "coldmic:conversation"
 )
 
 var eventsEmit = runtime.EventsEmit
@@ -175,6 +176,17 @@ func (a *App) SessionError(code domain.ErrorCode, detail string) {
 		"code":    string(code),
 		"message": errorMessage(code, detail),
 		"detail":  detail,
+	})
+}
+
+// ConversationStateChanged emits conversation state updates to the frontend.
+func (a *App) ConversationStateChanged(state domain.ConversationState, reason domain.ConversationStateReason) {
+	if a.ctx == nil {
+		return
+	}
+	eventsEmit(a.ctx, eventConversation, map[string]string{
+		"state":  string(state),
+		"reason": string(reason),
 	})
 }
 
