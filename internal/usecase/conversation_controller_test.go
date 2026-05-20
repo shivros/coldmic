@@ -122,19 +122,6 @@ func newTestController(backend ports.ConversationBackend, tts ports.TextToSpeech
 	}
 }
 
-func newTestControllerWithListener(
-	listener *ContinuousListener,
-	backend ports.ConversationBackend,
-	tts ports.TextToSpeech,
-	sink *mockConvEventSink,
-) *ConversationController {
-	cfg := ConversationControllerConfig{
-		StopPhrases:    []string{"thanks alice", "that's all", "goodbye", "bye alice", "stop"},
-		SilenceTimeout: 30 * time.Second,
-	}
-	return NewConversationController(listener, backend, tts, sink, cfg)
-}
-
 // --- Tests ---
 
 func TestConversationController_InitialState(t *testing.T) {
