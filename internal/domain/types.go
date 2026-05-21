@@ -70,6 +70,37 @@ type LatestTranscript struct {
 	CapturedAt time.Time  `json:"capturedAt"`
 }
 
+// ConversationState models the voice assistant conversation lifecycle.
+type ConversationState string
+
+const (
+	ConvStateIdle       ConversationState = "idle"
+	ConvStateListening  ConversationState = "listening"
+	ConvStateProcessing ConversationState = "processing"
+	ConvStateSpeaking   ConversationState = "speaking"
+)
+
+// ConversationStateReason provides a structured reason for conversation state transitions.
+type ConversationStateReason string
+
+const (
+	ConvReasonWakeDetected    ConversationStateReason = "wake_detected"
+	ConvReasonSpeechReceived  ConversationStateReason = "speech_received"
+	ConvReasonBackendResponse ConversationStateReason = "backend_response"
+	ConvReasonPlaybackDone    ConversationStateReason = "playback_done"
+	ConvReasonStopPhrase      ConversationStateReason = "stop_phrase"
+	ConvReasonSilenceTimeout  ConversationStateReason = "silence_timeout"
+	ConvReasonManualStop      ConversationStateReason = "manual_stop"
+	ConvReasonError           ConversationStateReason = "error"
+)
+
+// ConversationStatus summarizes the current conversation controller status.
+type ConversationStatus struct {
+	State     ConversationState `json:"state"`
+	SessionID string            `json:"sessionId,omitempty"`
+	Active    bool              `json:"active"`
+}
+
 // Status summarizes the current runtime status.
 type Status struct {
 	State   SessionState `json:"state"`

@@ -55,6 +55,7 @@ type ConversationConfig struct {
 	Stream       bool
 	Timeout      time.Duration
 	MaxHistory   int
+	StopPhrases  []string
 }
 
 type ContinuousConfig struct {
@@ -123,6 +124,7 @@ func Load() (Config, error) {
 			Stream:       envOrDefaultBool("COLDMIC_BACKEND_STREAM", true),
 			Timeout:      envOrDefaultDuration("COLDMIC_BACKEND_TIMEOUT", 30*time.Second),
 			MaxHistory:   envOrDefaultInt("COLDMIC_BACKEND_MAX_HISTORY", 20),
+			StopPhrases:  parseStopPhrases(envOrDefault("COLDMIC_STOP_PHRASES", "thanks alice,that's all,goodbye,bye alice,stop")),
 		},
 		Continuous: ContinuousConfig{
 			WakePhrases:  parseWakePhrases(envOrDefault("COLDMIC_WAKE_PHRASES", "hey alice,alice")),
@@ -239,6 +241,17 @@ func firstNonNegativeInt(primary string, secondary string, fallback int) int {
 }
 
 func parseWakePhrases(raw string) []string {
+	var result []string
+	for _, p := range strings.Split(raw, ",") {
+		p = strings.TrimSpace(strings.ToLower(p))
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+func parseStopPhrases(raw string) []string {
 	var result []string
 	for _, p := range strings.Split(raw, ",") {
 		p = strings.TrimSpace(strings.ToLower(p))
