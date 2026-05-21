@@ -2,36 +2,36 @@
 
 ## Phase 1: Ports & Providers (COD-277, COD-279)
 
-- [ ] Define `ConversationBackend` interface in `internal/ports/conversation.go` (SendMessage, StreamMessage, CloseSession)
-- [ ] Define `TextToSpeech` interface in `internal/ports/tts.go` (Synthesize, Play)
-- [ ] Define domain types: `ConversationResponse`, `StreamChunk`, `ConversationState`, conversation-related errors in `internal/domain/types.go`
-- [ ] Implement OpenAI-compatible bridge in `internal/providers/openai_conversation.go`
-  - [ ] Non-streaming SendMessage with chat completions
-  - [ ] Streaming StreamMessage with SSE parsing
-  - [ ] In-memory session history with max-turn eviction
-  - [ ] Retry logic for transient errors (exclude 4xx auth)
-  - [ ] Markdown stripping for voice output
-- [ ] Implement edge-tts provider in `internal/providers/edge_tts.go`
-  - [ ] Synthesize via subprocess
-  - [ ] Play via ffplay/paplay subprocess
-  - [ ] Context cancellation kills subprocesses
-- [ ] Unit tests for OpenAI bridge (mocked HTTP)
-- [ ] Unit tests for edge-tts provider (mocked subprocess)
+- [x] Define `ConversationBackend` interface in `internal/ports/conversation.go` (SendMessage, StreamMessage, CloseSession)
+- [x] Define `TextToSpeech` interface in `internal/ports/tts.go` (Synthesize, Play)
+- [x] Define domain types: `ConversationResponse`, `StreamChunk`, `ConversationState`, conversation-related errors in `internal/domain/types.go`
+- [x] Implement OpenAI-compatible bridge in `internal/providers/openai/conversation.go`
+  - [x] Non-streaming SendMessage with chat completions
+  - [x] Streaming StreamMessage with SSE parsing
+  - [x] In-memory session history with max-turn eviction
+  - [x] Retry logic for transient errors (exclude 4xx auth)
+  - [x] Markdown stripping for voice output
+- [x] Implement edge-tts provider in `internal/providers/edge_tts.go`
+  - [x] Synthesize via subprocess
+  - [x] Play via ffplay/paplay subprocess
+  - [x] Context cancellation kills subprocesses
+- [x] Unit tests for OpenAI bridge (mocked HTTP)
+- [x] Unit tests for edge-tts provider (mocked subprocess)
 
 ## Phase 2: VAD & Continuous Listening (COD-278)
 
-- [ ] Implement Silero VAD wrapper in `internal/audio/vad.go`
-  - [ ] Load ONNX model
-  - [ ] Process 30ms frames, return speech probability
-  - [ ] Speech onset/offset detection with configurable threshold and silence duration
-- [ ] Implement `ContinuousListener` in `internal/usecase/continuous_listener.go`
-  - [ ] Continuous mic capture loop
-  - [ ] VAD-gated streaming to Deepgram
-  - [ ] Wake phrase matching on final transcripts
-  - [ ] Event channel output
-- [ ] Add `SessionStateContinuous` to domain types
-- [ ] Unit tests for VAD wrapper
-- [ ] Unit tests for continuous listener with mocked AudioCapture and TranscriptionProvider
+- [x] Implement Silero VAD wrapper in `internal/audio/vad.go`
+  - [x] Load ONNX model
+  - [x] Process 30ms frames, return speech probability
+  - [x] Speech onset/offset detection with configurable threshold and silence duration
+- [x] Implement `ContinuousListener` in `internal/usecase/continuous_listener.go`
+  - [x] Continuous mic capture loop
+  - [x] VAD-gated streaming to Deepgram
+  - [x] Wake phrase matching on final transcripts
+  - [x] Event channel output
+- [x] Add `SessionStateContinuous` to domain types
+- [x] Unit tests for VAD wrapper
+- [x] Unit tests for continuous listener with mocked AudioCapture and TranscriptionProvider
 
 ## Phase 3: Conversation Controller (COD-280)
 
