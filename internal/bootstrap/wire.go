@@ -7,6 +7,7 @@ import (
 	"coldmic/internal/config"
 	"coldmic/internal/ports"
 	"coldmic/internal/providers/deepgram"
+	"coldmic/internal/providers/edge_tts"
 	"coldmic/internal/providers/openai"
 	"coldmic/internal/rules"
 	"coldmic/internal/usecase"
@@ -14,10 +15,11 @@ import (
 
 // Services is the assembled runtime graph.
 type Services struct {
-	Controller   *usecase.SessionController
-	Session      *usecase.SessionService
-	Config       config.Config
-	Conversation ports.ConversationBackend
+	Controller             *usecase.SessionController
+	ConversationController *usecase.ConversationController
+	Session                *usecase.SessionService
+	Config                 config.Config
+	Conversation           ports.ConversationBackend
 }
 
 // Build wires all backend dependencies for the current runtime.
@@ -109,10 +111,38 @@ func Build(eventSink ports.EventSink, clipboard ports.Clipboard) (Services, erro
 		},
 	)
 
+	// Wire TTS provider.
+	var ttsProvider ports.TextToSpeech
+	switch cfg.TTS.Engine {
+	case "edge-tts", "":
+		ttsProvider = edge_tts.NewProvider(edge_tts.Config{
+			Command:     "edge-tts",
+			Voice:       cfg.TTS.Voice,
+			Rate:        cfg.TTS.Rate,
+			Volume:      cfg.TTS.Volume,
+			PlaybackCmd: cfg.TTS.PlaybackCmd,
+		})
+	default:
+		return Services{}, fmt.Errorf("unknown TTS engine: %q", cfg.TTS.Engine)
+	}
+
+	// Wire conversation controller.
+	conversationCtrl := usecase.NewConversationController(
+		listener,
+		conversationBackend,
+		ttsProvider,
+		eventSink,
+		usecase.ConversationControllerConfig{
+			StopPhrases:    cfg.Conversation.StopPhrases,
+			SilenceTimeout: cfg.Conversation.SilenceTimeout,
+		},
+	)
+
 	return Services{
-		Controller:   controller,
-		Session:      usecase.NewSessionServiceWithContinuous(controller, listener),
-		Config:       cfg,
-		Conversation: conversationBackend,
+		Controller:             controller,
+		ConversationController: conversationCtrl,
+		Session:                usecase.NewSessionServiceWithConversation(controller, listener, conversationCtrl),
+		Config:                 cfg,
+		Conversation:           conversationBackend,
 	}, nil
 }

@@ -328,6 +328,9 @@ type fakeService struct {
 	startCtx     context.Context
 	startContErr error
 	stopContErr  error
+	convStartErr error
+	convStopErr  error
+	convStatus   domain.ConversationStatus
 }
 
 func (f *fakeService) Start(ctx context.Context) error {
@@ -368,6 +371,18 @@ func (f *fakeService) StartContinuous(_ context.Context) error {
 
 func (f *fakeService) StopContinuous() error {
 	return f.stopContErr
+}
+
+func (f *fakeService) StartConversation(context.Context) error {
+	return f.convStartErr
+}
+
+func (f *fakeService) StopConversation() error {
+	return f.convStopErr
+}
+
+func (f *fakeService) ConversationStatus() domain.ConversationStatus {
+	return f.convStatus
 }
 
 func TestAPIContinuousStartSuccess(t *testing.T) {

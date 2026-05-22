@@ -15,4 +15,7 @@ type SessionService interface {
 	LastTranscript() (domain.LatestTranscript, error)
 	StartContinuous(ctx context.Context) error
 	StopContinuous() error
+	StartConversation(ctx context.Context) error
+	StopConversation() error
+	ConversationStatus() domain.ConversationStatus
 }

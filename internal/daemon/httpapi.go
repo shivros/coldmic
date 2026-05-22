@@ -31,6 +31,9 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("/v1/session/transcript/latest", a.handleLatestTranscript)
 	mux.HandleFunc("/v1/conversation/listen/start", a.handleContinuousStart)
 	mux.HandleFunc("/v1/conversation/listen/stop", a.handleContinuousStop)
+	mux.HandleFunc("/v1/conversation/start", a.handleConversationStart)
+	mux.HandleFunc("/v1/conversation/stop", a.handleConversationStop)
+	mux.HandleFunc("/v1/conversation/status", a.handleConversationStatus)
 	return mux
 }
 
@@ -169,4 +172,53 @@ func (a *API) handleContinuousStop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, StatusResponse{OK: true, Status: a.service.Status()})
+}
+
+func (a *API) handleConversationStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+		return
+	}
+
+	// Quick check before spawning goroutine.
+	status := a.service.ConversationStatus()
+	if status.Active {
+		writeError(w, http.StatusConflict, domain.ErrConversationActive.Error())
+		return
+	}
+
+	// StartConversation spawns goroutines internally.
+	if err := a.service.StartConversation(context.WithoutCancel(r.Context())); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, ConversationStatusResponse{OK: true, Status: a.service.ConversationStatus()})
+}
+
+func (a *API) handleConversationStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+		return
+	}
+
+	if err := a.service.StopConversation(); err != nil {
+		if errors.Is(err, domain.ErrNoConversationActive) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, ConversationStatusResponse{OK: true, Status: a.service.ConversationStatus()})
+}
+
+func (a *API) handleConversationStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, ConversationStatusResponse{OK: true, Status: a.service.ConversationStatus()})
 }

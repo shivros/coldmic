@@ -25,3 +25,11 @@ func printTranscript(w io.Writer, capturedAt time.Time, result domain.StopResult
 	fmt.Fprintf(w, "captured_at=%s copied=%t\n", printTranscriptTime(capturedAt), result.Copied)
 	fmt.Fprintln(w, result.FinalTranscript)
 }
+
+func printConversationStatus(w io.Writer, status domain.ConversationStatus) {
+	fmt.Fprintf(w, "conversation_state=%s active=%t", status.State, status.Active)
+	if status.SessionID != "" {
+		fmt.Fprintf(w, " session_id=%s", status.SessionID)
+	}
+	fmt.Fprintln(w)
+}

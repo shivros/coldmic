@@ -496,6 +496,9 @@ type fakeSessionClient struct {
 	abortCalls      int
 	statusCalls     int
 	transcriptCalls int
+	conversationStartCalls int
+	conversationStopCalls  int
+	conversationStatusCalls int
 
 	startStatus  domain.Status
 	stopStatus   domain.Status
@@ -504,12 +507,18 @@ type fakeSessionClient struct {
 	statusStatus domain.Status
 	transcriptAt time.Time
 	transcript   domain.StopResult
+	conversationStartStatus domain.ConversationStatus
+	conversationStopStatus  domain.ConversationStatus
+	conversationStatusVal   domain.ConversationStatus
 
 	startErr      error
 	stopErr       error
 	abortErr      error
 	statusErr     error
 	transcriptErr error
+	conversationStartErr error
+	conversationStopErr  error
+	conversationStatusErr error
 }
 
 func (f *fakeSessionClient) Start(context.Context) (domain.Status, error) {
@@ -553,6 +562,30 @@ func (f *fakeSessionClient) Transcript(context.Context) (time.Time, domain.StopR
 		return time.Date(2026, 2, 25, 12, 0, 0, 0, time.UTC), f.transcript, nil
 	}
 	return f.transcriptAt, f.transcript, nil
+}
+
+func (f *fakeSessionClient) ConversationStart(context.Context) (domain.ConversationStatus, error) {
+	f.conversationStartCalls++
+	if f.conversationStartErr != nil {
+		return domain.ConversationStatus{}, f.conversationStartErr
+	}
+	return f.conversationStartStatus, nil
+}
+
+func (f *fakeSessionClient) ConversationStop(context.Context) (domain.ConversationStatus, error) {
+	f.conversationStopCalls++
+	if f.conversationStopErr != nil {
+		return domain.ConversationStatus{}, f.conversationStopErr
+	}
+	return f.conversationStopStatus, nil
+}
+
+func (f *fakeSessionClient) ConversationStatus(context.Context) (domain.ConversationStatus, error) {
+	f.conversationStatusCalls++
+	if f.conversationStatusErr != nil {
+		return domain.ConversationStatus{}, f.conversationStatusErr
+	}
+	return f.conversationStatusVal, nil
 }
 
 func TestCommandRunnerNoCommandPropagatesStatusError(t *testing.T) {
