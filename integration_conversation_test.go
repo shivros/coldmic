@@ -310,18 +310,15 @@ func TestIntegration_ConversationDoubleStartError(t *testing.T) {
 	// The HTTP handler's quick check uses ConversationStatus().Active which is
 	// false when state=idle (controller armed but no wake phrase detected).
 	// So it falls through to StartConversation() which checks Running() and
-	// returns ErrConversationActive. The handler maps this to 500.
+	// returns ErrConversationActive, now correctly mapped to 409 Conflict.
 	resp, err := http.Post(srv.URL+"/v1/conversation/start", "application/json", nil)
 	if err != nil {
 		t.Fatalf("second start request failed: %v", err)
 	}
 	defer resp.Body.Close()
 
-	// The handler returns 500 because it doesn't distinguish ErrConversationActive
-	// from other StartConversation errors. This is a known limitation: the HTTP
-	// guard checks Active (state-derived) rather than Running (goroutine status).
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Errorf("expected 500 on double-start (Running guard fires), got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("expected 409 Conflict on double-start, got %d", resp.StatusCode)
 	}
 
 	var body conversationStatusResponse
