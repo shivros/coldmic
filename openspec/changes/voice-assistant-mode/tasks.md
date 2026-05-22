@@ -63,7 +63,7 @@
   - [x] Register HTTP handlers
 - [x] Add all configuration variables with defaults
 - [x] Update README.md with Conversation Mode section
-- [ ] Integration test: start daemon → start conversation → verify status endpoint
+- [x] Integration test: start daemon → start conversation → verify status endpoint
 
 ## Phase 5: End-to-End Verification
 
