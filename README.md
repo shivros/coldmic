@@ -139,6 +139,9 @@ go run ./cmd/coldmic
 When enabled, no-arg CLI invocation checks current status and toggles:
 
 - idle -> `start`
+- active -> `stop`
+
+When `COLDMIC_TOGGLE_COMPAT` is unset or not `true`, no-arg invocation keeps strict behavior and prints usage with an error.
 
 ### Conversation Mode
 
@@ -157,9 +160,6 @@ go run ./cmd/coldmic conversation status --json
 ```
 
 Conversation mode uses VAD-gated continuous listening with wake phrase detection, an OpenAI-compatible backend for responses, and edge-tts for speech playback. Say a wake phrase (default: "Hey Alice") to trigger a conversation cycle, and a stop phrase (default: "Thanks Alice", "goodbye", etc.) or silence timeout to end.
-- active -> `stop`
-
-When `COLDMIC_TOGGLE_COMPAT` is unset or not `true`, no-arg invocation keeps strict behavior and prints usage with an error.
 
 Daemon HTTP API:
 
