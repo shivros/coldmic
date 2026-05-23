@@ -27,3 +27,8 @@ type LatestTranscriptResponse struct {
 	Captured time.Time         `json:"captured"`
 	Result   domain.StopResult `json:"result"`
 }
+
+type ConversationStatusResponse struct {
+	OK     bool                       `json:"ok"`
+	Status domain.ConversationStatus  `json:"status"`
+}

@@ -44,6 +44,25 @@ Environment variables:
 - `COLDMIC_DAEMON_ADDR` (daemon bind address, default: `127.0.0.1:4317`)
 - `COLDMIC_DAEMON_URL` (CLI daemon URL, default: `http://127.0.0.1:4317`)
 
+Conversation mode:
+
+- `COLDMIC_CONVERSATION_BACKEND` (default: `openai`)
+- `COLDMIC_BACKEND_BASE_URL` (default: `https://api.openai.com/v1`)
+- `COLDMIC_BACKEND_API_KEY` (required for conversation mode)
+- `COLDMIC_BACKEND_MODEL` (default: `gpt-4o`)
+- `COLDMIC_BACKEND_SYSTEM_PROMPT` (default: `You are a helpful voice assistant.`)
+- `COLDMIC_BACKEND_STREAM` (default: `true`)
+- `COLDMIC_BACKEND_TIMEOUT` (default: `30s`)
+- `COLDMIC_BACKEND_MAX_HISTORY` (default: `20`)
+- `COLDMIC_STOP_PHRASES` (comma-separated, default: `thanks alice,that's all,goodbye,bye alice,stop`)
+- `COLDMIC_CONVERSATION_TIMEOUT` (silence timeout, default: `30s`)
+- `COLDMIC_WAKE_PHRASES` (comma-separated, default: `hey alice,alice`)
+- `COLDMIC_TTS_ENGINE` (default: `edge-tts`)
+- `COLDMIC_TTS_VOICE` (default: `en-US-AriaNeural`)
+- `COLDMIC_TTS_RATE` (default: `+0%`)
+- `COLDMIC_TTS_VOLUME` (default: `+0%`)
+- `COLDMIC_TTS_PLAYBACK_CMD` (default: `ffplay`)
+
 Rules-file fallback order:
 
 1. `COLDMIC_RULES_FILE`
@@ -123,6 +142,24 @@ When enabled, no-arg CLI invocation checks current status and toggles:
 - active -> `stop`
 
 When `COLDMIC_TOGGLE_COMPAT` is unset or not `true`, no-arg invocation keeps strict behavior and prints usage with an error.
+
+### Conversation Mode
+
+Start a voice assistant conversation (requires `COLDMIC_BACKEND_API_KEY` and a running daemon):
+
+```bash
+go run ./cmd/coldmic conversation start
+go run ./cmd/coldmic conversation status
+go run ./cmd/coldmic conversation stop
+```
+
+JSON output:
+
+```bash
+go run ./cmd/coldmic conversation status --json
+```
+
+Conversation mode uses VAD-gated continuous listening with wake phrase detection, an OpenAI-compatible backend for responses, and edge-tts for speech playback. Say a wake phrase (default: "Hey Alice") to trigger a conversation cycle, and a stop phrase (default: "Thanks Alice", "goodbye", etc.) or silence timeout to end.
 
 Daemon HTTP API:
 

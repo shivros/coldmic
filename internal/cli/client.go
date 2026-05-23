@@ -42,6 +42,12 @@ type transcriptEnvelope struct {
 	Result   domain.StopResult `json:"result"`
 }
 
+type conversationEnvelope struct {
+	OK     bool                        `json:"ok"`
+	Error  string                      `json:"error,omitempty"`
+	Status domain.ConversationStatus   `json:"status"`
+}
+
 func (c *Client) Start(ctx context.Context) (domain.Status, error) {
 	var env envelope
 	if err := c.call(ctx, http.MethodPost, "/v1/session/start", nil, &env); err != nil {
@@ -82,6 +88,30 @@ func (c *Client) Transcript(ctx context.Context) (time.Time, domain.StopResult, 
 	return env.Captured, env.Result, nil
 }
 
+func (c *Client) ConversationStart(ctx context.Context) (domain.ConversationStatus, error) {
+	var env conversationEnvelope
+	if err := c.call(ctx, http.MethodPost, "/v1/conversation/start", nil, &env); err != nil {
+		return domain.ConversationStatus{}, err
+	}
+	return env.Status, nil
+}
+
+func (c *Client) ConversationStop(ctx context.Context) (domain.ConversationStatus, error) {
+	var env conversationEnvelope
+	if err := c.call(ctx, http.MethodPost, "/v1/conversation/stop", nil, &env); err != nil {
+		return domain.ConversationStatus{}, err
+	}
+	return env.Status, nil
+}
+
+func (c *Client) ConversationStatus(ctx context.Context) (domain.ConversationStatus, error) {
+	var env conversationEnvelope
+	if err := c.call(ctx, http.MethodGet, "/v1/conversation/status", nil, &env); err != nil {
+		return domain.ConversationStatus{}, err
+	}
+	return env.Status, nil
+}
+
 func (c *Client) call(ctx context.Context, method string, path string, payload any, out any) error {
 	var body io.Reader
 	if payload != nil {
@@ -118,6 +148,8 @@ func (c *Client) call(ctx context.Context, method string, path string, payload a
 		case *envelope:
 			return newHTTPError(resp.StatusCode, v.Error)
 		case *transcriptEnvelope:
+			return newHTTPError(resp.StatusCode, v.Error)
+		case *conversationEnvelope:
 			return newHTTPError(resp.StatusCode, v.Error)
 		default:
 			return newHTTPError(resp.StatusCode, "request failed")

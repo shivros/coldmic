@@ -35,35 +35,35 @@
 
 ## Phase 3: Conversation Controller (COD-280)
 
-- [ ] Implement `ConversationController` state machine in `internal/usecase/conversation_controller.go`
-  - [ ] Four states: Idle, Listening, Processing, Speaking
-  - [ ] State transitions driven by listener events
-  - [ ] Stop phrase detection in transcripts
-  - [ ] Silence timeout with configurable duration
-  - [ ] Error recovery (backend errors → speak apology → resume listening)
-  - [ ] State change events to EventSink
-- [ ] Extend `EventSink` interface with `ConversationStateChanged`
-- [ ] Unit tests for all state transitions
-- [ ] Unit tests for stop phrase and timeout scenarios
+- [x] Implement `ConversationController` state machine in `internal/usecase/conversation_controller.go`
+  - [x] Four states: Idle, Listening, Processing, Speaking
+  - [x] State transitions driven by listener events
+  - [x] Stop phrase detection in transcripts
+  - [x] Silence timeout with configurable duration
+  - [x] Error recovery (backend errors → speak apology → resume listening)
+  - [x] State change events to EventSink
+- [x] Extend `EventSink` interface with `ConversationStateChanged`
+- [x] Unit tests for all state transitions
+- [x] Unit tests for stop phrase and timeout scenarios
 
 ## Phase 4: Daemon Integration (COD-281)
 
-- [ ] Add HTTP API endpoints in `internal/daemon/httpapi.go`
-  - [ ] `POST /v1/conversation/start`
-  - [ ] `POST /v1/conversation/stop`
-  - [ ] `GET /v1/conversation/status`
-- [ ] Add CLI commands in `internal/cli/client.go`
-  - [ ] `coldmic conversation start`
-  - [ ] `coldmic conversation stop`
-  - [ ] `coldmic conversation status`
-- [ ] Extend `internal/bootstrap/wire.go` with conversation subsystem wiring
-  - [ ] Backend provider selection from config
-  - [ ] TTS provider selection from config
-  - [ ] Construct ContinuousListener, ConversationController
-  - [ ] Register HTTP handlers
-- [ ] Add all configuration variables with defaults
-- [ ] Update README.md with Conversation Mode section
-- [ ] Integration test: start daemon → start conversation → verify status endpoint
+- [x] Add HTTP API endpoints in `internal/daemon/httpapi.go`
+  - [x] `POST /v1/conversation/start`
+  - [x] `POST /v1/conversation/stop`
+  - [x] `GET /v1/conversation/status`
+- [x] Add CLI commands in `internal/cli/client.go`
+  - [x] `coldmic conversation start`
+  - [x] `coldmic conversation stop`
+  - [x] `coldmic conversation status`
+- [x] Extend `internal/bootstrap/wire.go` with conversation subsystem wiring
+  - [x] Backend provider selection from config
+  - [x] TTS provider selection from config
+  - [x] Construct ContinuousListener, ConversationController
+  - [x] Register HTTP handlers
+- [x] Add all configuration variables with defaults
+- [x] Update README.md with Conversation Mode section
+- [x] Integration test: start daemon → start conversation → verify status endpoint
 
 ## Phase 5: End-to-End Verification
 

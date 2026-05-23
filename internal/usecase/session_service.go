@@ -6,13 +6,15 @@ import (
 	"sync"
 	"time"
 
+	"coldmic/internal/debuglog"
 	"coldmic/internal/domain"
 )
 
 // SessionService provides an application-level API for session lifecycle control.
 type SessionService struct {
-	controller         *SessionController
-	continuousListener *ContinuousListener
+	controller             *SessionController
+	continuousListener     *ContinuousListener
+	conversationController *ConversationController
 
 	mu     sync.RWMutex
 	latest *domain.LatestTranscript
@@ -27,6 +29,19 @@ func NewSessionServiceWithContinuous(controller *SessionController, listener *Co
 	return &SessionService{
 		controller:         controller,
 		continuousListener: listener,
+	}
+}
+
+// NewSessionServiceWithConversation creates a SessionService with full conversation support.
+func NewSessionServiceWithConversation(
+	controller *SessionController,
+	listener *ContinuousListener,
+	conversationCtrl *ConversationController,
+) *SessionService {
+	return &SessionService{
+		controller:             controller,
+		continuousListener:     listener,
+		conversationController: conversationCtrl,
 	}
 }
 
@@ -100,4 +115,66 @@ func (s *SessionService) StopContinuous() error {
 	}
 	s.continuousListener.Stop()
 	return nil
+}
+
+// StartConversation starts the conversation controller loop. This runs in a
+// background goroutine and coordinates with the ContinuousListener, backend,
+// and TTS subsystems.
+func (s *SessionService) StartConversation(ctx context.Context) error {
+	if s.conversationController == nil {
+		return errors.New("conversation mode not configured")
+	}
+	if s.continuousListener == nil {
+		return errors.New("continuous listening not configured")
+	}
+	// Guard: reject if conversation is already running.
+	if s.conversationController.Running() {
+		return domain.ErrConversationActive
+	}
+	// Guard: reject if continuous listener is already running (PTT continuous mode).
+	if s.continuousListener.Running() {
+		return domain.ErrContinuousActive
+	}
+
+	// Start the continuous listener first (it feeds events to the controller).
+	// Both listener and controller have internal running guards that prevent
+	// double-start. The listener blocks until context cancellation, so we run
+	// it in a goroutine.
+	go func() {
+		if err := s.continuousListener.Start(context.WithoutCancel(ctx)); err != nil {
+			debuglog.Printf("session_service: continuous listener exited with error: %v", err)
+		}
+	}()
+	// Start the conversation controller (subscribes to listener events).
+	go func() {
+		if err := s.conversationController.Start(context.WithoutCancel(ctx)); err != nil {
+			debuglog.Printf("session_service: conversation controller exited with error: %v", err)
+		}
+	}()
+	return nil
+}
+
+// StopConversation stops an active conversation session.
+func (s *SessionService) StopConversation() error {
+	if s.conversationController == nil {
+		return errors.New("conversation mode not configured")
+	}
+	if !s.conversationController.Running() {
+		return domain.ErrNoConversationActive
+	}
+	// Stop the conversation controller first (it will drain listener events).
+	s.conversationController.Stop()
+	// Then stop the continuous listener.
+	if s.continuousListener != nil && s.continuousListener.Running() {
+		s.continuousListener.Stop()
+	}
+	return nil
+}
+
+// ConversationStatus returns the current conversation controller status.
+func (s *SessionService) ConversationStatus() domain.ConversationStatus {
+	if s.conversationController == nil {
+		return domain.ConversationStatus{State: domain.ConvStateIdle}
+	}
+	return s.conversationController.Status()
 }

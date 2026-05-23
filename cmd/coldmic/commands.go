@@ -28,6 +28,9 @@ type SessionClient interface {
 	Abort(ctx context.Context) (domain.Status, error)
 	Status(ctx context.Context) (domain.Status, error)
 	Transcript(ctx context.Context) (time.Time, domain.StopResult, error)
+	ConversationStart(ctx context.Context) (domain.ConversationStatus, error)
+	ConversationStop(ctx context.Context) (domain.ConversationStatus, error)
+	ConversationStatus(ctx context.Context) (domain.ConversationStatus, error)
 }
 
 type sessionClientFactory func(daemonURL string) SessionClient
@@ -96,6 +99,7 @@ func (r *CommandRunner) registerCommands() {
 	r.register("abort", "Abort recording and discard captured audio", r.runAbort)
 	r.register("status", "Show current recording state", r.runStatus)
 	r.register("transcript", "Show latest final transcript", r.runTranscript)
+	r.register("conversation", "Conversation mode commands", r.runConversation)
 	r.register("help", "Show this help text", r.runHelp)
 	r.commands["-h"] = r.commands["help"]
 	r.commands["--help"] = r.commands["help"]
@@ -266,6 +270,85 @@ func (r *CommandRunner) runTranscript(args []string) (int, error) {
 	return exitOK, nil
 }
 
+func (r *CommandRunner) runConversation(args []string) (int, error) {
+	if len(args) == 0 {
+		fmt.Fprintln(r.stderr, "Usage: coldmic conversation <start|stop|status> [flags]")
+		return exitGeneric, fmt.Errorf("missing conversation subcommand")
+	}
+
+	subcmd := args[0]
+	rest := args[1:]
+
+	switch subcmd {
+	case "start":
+		return r.runConversationStart(rest)
+	case "stop":
+		return r.runConversationStop(rest)
+	case "status":
+		return r.runConversationStatus(rest)
+	default:
+		fmt.Fprintln(r.stderr, "Usage: coldmic conversation <start|stop|status> [flags]")
+		return exitGeneric, fmt.Errorf("unknown conversation subcommand: %s", subcmd)
+	}
+}
+
+func (r *CommandRunner) runConversationStart(args []string) (int, error) {
+	cfg, err := r.parseCommonFlags("conversation start", args)
+	if err != nil {
+		return exitGeneric, err
+	}
+
+	status, err := r.clientFactory(cfg.daemonURL).ConversationStart(context.Background())
+	if err != nil {
+		return mapErrorToExitCode(err), err
+	}
+
+	if cfg.outputJSON {
+		writeJSON(r.stdout, cliConversationOutput{Status: status})
+	} else {
+		printConversationStatus(r.stdout, status)
+	}
+	return exitOK, nil
+}
+
+func (r *CommandRunner) runConversationStop(args []string) (int, error) {
+	cfg, err := r.parseCommonFlags("conversation stop", args)
+	if err != nil {
+		return exitGeneric, err
+	}
+
+	status, err := r.clientFactory(cfg.daemonURL).ConversationStop(context.Background())
+	if err != nil {
+		return mapErrorToExitCode(err), err
+	}
+
+	if cfg.outputJSON {
+		writeJSON(r.stdout, cliConversationOutput{Status: status})
+	} else {
+		printConversationStatus(r.stdout, status)
+	}
+	return exitOK, nil
+}
+
+func (r *CommandRunner) runConversationStatus(args []string) (int, error) {
+	cfg, err := r.parseCommonFlags("conversation status", args)
+	if err != nil {
+		return exitGeneric, err
+	}
+
+	status, err := r.clientFactory(cfg.daemonURL).ConversationStatus(context.Background())
+	if err != nil {
+		return mapErrorToExitCode(err), err
+	}
+
+	if cfg.outputJSON {
+		writeJSON(r.stdout, cliConversationOutput{Status: status})
+	} else {
+		printConversationStatus(r.stdout, status)
+	}
+	return exitOK, nil
+}
+
 type commonFlags struct {
 	daemonURL  string
 	outputJSON bool
@@ -331,8 +414,13 @@ func (r *CommandRunner) printUsage() {
 	fmt.Fprintln(r.stdout, "Commands:")
 	for _, name := range r.commandOrder {
 		spec := r.commands[name]
-		fmt.Fprintf(r.stdout, "  %-10s %s\n", spec.name, spec.summary)
+		fmt.Fprintf(r.stdout, "  %-12s %s\n", spec.name, spec.summary)
 	}
+	fmt.Fprintln(r.stdout, "")
+	fmt.Fprintln(r.stdout, "Conversation subcommands:")
+	fmt.Fprintln(r.stdout, "  conversation start   Start voice assistant conversation mode")
+	fmt.Fprintln(r.stdout, "  conversation stop    Stop active conversation")
+	fmt.Fprintln(r.stdout, "  conversation status  Show conversation state")
 	fmt.Fprintln(r.stdout, "")
 	fmt.Fprintln(r.stdout, "Global flags per command:")
 	fmt.Fprintln(r.stdout, "  --daemon-url URL  Daemon URL (default: COLDMIC_DAEMON_URL or http://127.0.0.1:4317)")
@@ -358,6 +446,10 @@ type cliStopOutput struct {
 type cliTranscriptOutput struct {
 	CapturedAt time.Time         `json:"capturedAt"`
 	Result     domain.StopResult `json:"result"`
+}
+
+type cliConversationOutput struct {
+	Status domain.ConversationStatus `json:"status"`
 }
 
 func toggleCompatEnabled() bool {

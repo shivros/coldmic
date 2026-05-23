@@ -47,15 +47,16 @@ type SessionConfig struct {
 }
 
 type ConversationConfig struct {
-	Provider     string
-	BaseURL      string
-	APIKey       string
-	Model        string
-	SystemPrompt string
-	Stream       bool
-	Timeout      time.Duration
-	MaxHistory   int
-	StopPhrases  []string
+	Provider       string
+	BaseURL        string
+	APIKey         string
+	Model          string
+	SystemPrompt   string
+	Stream         bool
+	Timeout        time.Duration
+	MaxHistory     int
+	StopPhrases    []string
+	SilenceTimeout time.Duration
 }
 
 type ContinuousConfig struct {
@@ -124,7 +125,8 @@ func Load() (Config, error) {
 			Stream:       envOrDefaultBool("COLDMIC_BACKEND_STREAM", true),
 			Timeout:      envOrDefaultDuration("COLDMIC_BACKEND_TIMEOUT", 30*time.Second),
 			MaxHistory:   envOrDefaultInt("COLDMIC_BACKEND_MAX_HISTORY", 20),
-			StopPhrases:  parseStopPhrases(envOrDefault("COLDMIC_STOP_PHRASES", "thanks alice,that's all,goodbye,bye alice,stop")),
+			StopPhrases:    parseStopPhrases(envOrDefault("COLDMIC_STOP_PHRASES", "thanks alice,that's all,goodbye,bye alice,stop")),
+			SilenceTimeout: envOrDefaultDuration("COLDMIC_CONVERSATION_TIMEOUT", 30*time.Second),
 		},
 		Continuous: ContinuousConfig{
 			WakePhrases:  parseWakePhrases(envOrDefault("COLDMIC_WAKE_PHRASES", "hey alice,alice")),
