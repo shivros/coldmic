@@ -38,11 +38,12 @@ type ConversationController struct {
 	events   ports.EventSink
 	cfg      ConversationControllerConfig
 
-	mu        sync.Mutex
-	state     domain.ConversationState
-	sessionID string
-	running   bool
-	cancel    context.CancelFunc
+	mu         sync.Mutex
+	state      domain.ConversationState
+	sessionID  string
+	running    bool
+	cancel     context.CancelFunc
+	generation uint64 // incremented on each Start(); deferred cleanup only acts if generation matches
 
 	// silenceTimer tracks the inactivity timeout while in LISTENING state.
 	silenceTimer *time.Timer
@@ -110,13 +111,17 @@ func (c *ConversationController) Start(ctx context.Context) error {
 	ctx, c.cancel = context.WithCancel(ctx)
 	c.running = true
 	c.state = domain.ConvStateIdle
+	c.generation++
+	gen := c.generation
 	c.mu.Unlock()
 
 	defer func() {
 		c.mu.Lock()
-		c.running = false
-		c.state = domain.ConvStateIdle
-		c.sessionID = ""
+		if c.generation == gen {
+			c.running = false
+			c.state = domain.ConvStateIdle
+			c.sessionID = ""
+		}
 		c.mu.Unlock()
 	}()
 
@@ -124,13 +129,18 @@ func (c *ConversationController) Start(ctx context.Context) error {
 
 	events := c.listener.Events()
 	for {
+		// Capture silenceCh under lock to avoid data race with Stop().
+		c.mu.Lock()
+		silenceCh := c.silenceCh
+		c.mu.Unlock()
+
 		select {
 		case <-ctx.Done():
 			debuglog.Printf("conversation controller stopped")
 			c.emitState(domain.ConvStateIdle, domain.ConvReasonManualStop)
 			return ctx.Err()
 
-		case <-c.silenceCh:
+		case <-silenceCh:
 			// Silence timeout fires while in LISTENING state.
 			c.mu.Lock()
 			if c.state != domain.ConvStateListening {
@@ -179,7 +189,8 @@ func (c *ConversationController) Stop() {
 		cancel()
 	}
 
-	c.emitState(domain.ConvStateIdle, domain.ConvReasonManualStop)
+	// Note: do NOT emit idle event here. The Start() loop's ctx.Done() handler
+	// will emit it. Emitting here causes a duplicate event.
 }
 
 // handleEvent dispatches a single ListenerEvent based on the current state.

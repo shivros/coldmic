@@ -189,7 +189,7 @@ func (a *API) handleConversationStart(w http.ResponseWriter, r *http.Request) {
 
 	// StartConversation spawns goroutines internally.
 	if err := a.service.StartConversation(context.WithoutCancel(r.Context())); err != nil {
-		if errors.Is(err, domain.ErrConversationActive) {
+		if errors.Is(err, domain.ErrConversationActive) || errors.Is(err, domain.ErrContinuousActive) {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
