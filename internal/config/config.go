@@ -61,7 +61,8 @@ type ConversationConfig struct {
 
 type ContinuousConfig struct {
 	WakePhrases  []string
-	VADThreshold float64
+	VADEngine    string  // "silero" (default) or "energy"
+	VADThreshold float64 // Used by EnergyVAD (RMS threshold) and SileroVAD (speech probability threshold)
 	SilenceMs    int
 	FrameMs      int
 }
@@ -130,6 +131,7 @@ func Load() (Config, error) {
 		},
 		Continuous: ContinuousConfig{
 			WakePhrases:  parseWakePhrases(envOrDefault("COLDMIC_WAKE_PHRASES", "hey alice,alice")),
+			VADEngine:    envOrDefault("COLDMIC_VAD_ENGINE", "silero"),
 			VADThreshold: envOrDefaultFloat("COLDMIC_VAD_THRESHOLD", 500),
 			SilenceMs:    envOrDefaultInt("COLDMIC_VAD_SILENCE_MS", 800),
 			FrameMs:      envOrDefaultInt("COLDMIC_VAD_FRAME_MS", 30),
