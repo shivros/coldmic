@@ -62,7 +62,7 @@ func (m *mockAudioCapture) Start(ctx context.Context, _ ports.AudioConfig) (port
 type mockVAD struct{}
 
 func (mockVAD) Process(_ []byte) (float64, error) { return 0.0, nil }
-func (mockVAD) Reset()                             {}
+func (mockVAD) Reset()                            {}
 
 // mockTranscriptionProvider is never called because VAD reports silence.
 type mockTranscriptionProvider struct{}
