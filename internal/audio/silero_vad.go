@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	ort "github.com/yalue/onnxruntime_go"
 	"coldmic/internal/debuglog"
+	ort "github.com/yalue/onnxruntime_go"
 )
 
 const (
@@ -38,13 +38,13 @@ const (
 // The consumer (ContinuousListener) applies its own threshold check (prob > 0.5).
 // SileroVAD does not apply the threshold internally.
 type SileroVAD struct {
-	modelPath string
-	session   *ort.DynamicAdvancedSession
-	inputData []float32
-	stateData []float32
-	srData    []int64
-	srShape   ort.Shape
-	mu        sync.Mutex
+	modelPath   string
+	session     *ort.DynamicAdvancedSession
+	inputData   []float32
+	stateData   []float32
+	srData      []int64
+	srShape     ort.Shape
+	mu          sync.Mutex
 	initialized bool
 	onnxCleanup func()
 }
