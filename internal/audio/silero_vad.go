@@ -33,6 +33,10 @@ const (
 //
 // The Silero model requires ONNX Runtime. If the shared library is not found,
 // NewSileroVAD returns an error — callers should fall back to EnergyVAD.
+//
+// Note: The VAD interface's Process method returns a raw speech probability.
+// The consumer (ContinuousListener) applies its own threshold check (prob > 0.5).
+// SileroVAD does not apply the threshold internally.
 type SileroVAD struct {
 	modelPath string
 	session   *ort.DynamicAdvancedSession
@@ -40,7 +44,6 @@ type SileroVAD struct {
 	stateData []float32
 	srData    []int64
 	srShape   ort.Shape
-	threshold float64
 	mu        sync.Mutex
 	initialized bool
 	onnxCleanup func()
@@ -68,7 +71,6 @@ func NewSileroVAD(modelDir string, threshold float64) (*SileroVAD, error) {
 
 	v := &SileroVAD{
 		modelPath: modelPath,
-		threshold: threshold,
 		inputData: make([]float32, sileroSampleSize),
 		stateData: make([]float32, 2*1*128), // [2, 1, 128] flattened
 		srData:    []int64{sileroSampleRate},

@@ -68,37 +68,26 @@ func TestSileroVADNew(t *testing.T) {
 	if v == nil {
 		t.Fatal("expected non-nil SileroVAD")
 	}
-	if v.threshold != 0.5 {
-		t.Errorf("threshold = %v, want 0.5", v.threshold)
-	}
 	// Model should have been downloaded.
 	if _, err := os.Stat(filepath.Join(tmpDir, "silero_vad.onnx")); os.IsNotExist(err) {
 		t.Error("model file was not downloaded")
 	}
 }
 
-func TestSileroVADNewDefaultThreshold(t *testing.T) {
-	tests := []struct {
-		input    float64
-		expected float64
-	}{
-		{0, sileroDefaultThreshold},
-		{1, sileroDefaultThreshold},
-		{-1, sileroDefaultThreshold},
-		{1.5, sileroDefaultThreshold},
-		{0.5, 0.5},
-		{0.3, 0.3},
-		{0.8, 0.8},
-	}
-	for _, tt := range tests {
+func TestSileroVADNewIgnoresInvalidThreshold(t *testing.T) {
+	// NewSileroVAD accepts a threshold parameter but doesn't store it —
+	// the consumer (ContinuousListener) applies its own threshold.
+	// This test just verifies the constructor doesn't error on edge-case values.
+	tests := []float64{0, 1, -1, 1.5, 0.5, 0.3, 0.8}
+	for _, threshold := range tests {
 		t.Run("", func(t *testing.T) {
 			tmpDir := t.TempDir()
-			v, err := NewSileroVAD(tmpDir, tt.input)
+			v, err := NewSileroVAD(tmpDir, threshold)
 			if err != nil {
-				t.Fatalf("NewSileroVAD: %v", err)
+				t.Fatalf("NewSileroVAD(%v): %v", threshold, err)
 			}
-			if v.threshold != tt.expected {
-				t.Errorf("threshold = %v, want %v", v.threshold, tt.expected)
+			if v == nil {
+				t.Fatal("expected non-nil SileroVAD")
 			}
 		})
 	}
