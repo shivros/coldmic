@@ -52,10 +52,17 @@ type audioRead struct {
 // It captures microphone audio, feeds frames through a VAD, streams speech
 // segments to the transcription provider, and emits wake-phrase-matched
 // transcripts on its Events channel.
+//
+// When a LocalSTT provider is set, the listener uses two-phase transcription:
+// speech audio is buffered and transcribed locally first. Only if a wake phrase
+// is detected does the listener engage the cloud TranscriptionProvider.
+// When LocalSTT is nil, the listener streams all speech to the cloud provider
+// directly (original single-phase behavior).
 type ContinuousListener struct {
 	audio    ports.AudioCapture
 	vad      audio.VAD
 	provider ports.TranscriptionProvider
+	localSTT ports.LocalSTT // optional: local STT for wake phrase pre-filtering
 	events   ports.EventSink
 	cfg      ContinuousListenerConfig
 
@@ -68,10 +75,13 @@ type ContinuousListener struct {
 }
 
 // NewContinuousListener creates a new continuous listener.
+// localSTT is optional — when non-nil, enables two-phase transcription
+// (local wake check before cloud STT). When nil, uses single-phase cloud STT.
 func NewContinuousListener(
 	audioCap ports.AudioCapture,
 	vad audio.VAD,
 	provider ports.TranscriptionProvider,
+	localSTT ports.LocalSTT,
 	events ports.EventSink,
 	cfg ContinuousListenerConfig,
 ) *ContinuousListener {
@@ -88,6 +98,7 @@ func NewContinuousListener(
 		audio:    audioCap,
 		vad:      vad,
 		provider: provider,
+		localSTT: localSTT,
 		events:   events,
 		cfg:      cfg,
 		outCh:    make(chan ListenerEvent, 32),
@@ -117,8 +128,8 @@ func (l *ContinuousListener) Start(ctx context.Context) error {
 		l.mu.Unlock()
 	}()
 
-	debuglog.Printf("continuous listener starting vad_threshold=%.1f silence_ms=%d frame_ms=%d wake_phrases=%v",
-		l.cfg.VADThreshold, l.cfg.SilenceMs, l.cfg.FrameMs, l.cfg.WakePhrases)
+	debuglog.Printf("continuous listener starting vad_threshold=%.1f silence_ms=%d frame_ms=%d wake_phrases=%v local_stt=%v",
+		l.cfg.VADThreshold, l.cfg.SilenceMs, l.cfg.FrameMs, l.cfg.WakePhrases, l.localSTT != nil)
 
 	// Start continuous audio capture.
 	audioSession, err := l.audio.Start(ctx, l.cfg.Audio)
@@ -183,7 +194,7 @@ func (l *ContinuousListener) Start(ctx context.Context) error {
 		return id
 	}
 
-	// beginSpeech starts a streaming transcription session.
+	// beginSpeech starts either buffering (two-phase) or streaming (single-phase).
 	beginSpeech := func() {
 		if speechActive {
 			return
@@ -191,6 +202,23 @@ func (l *ContinuousListener) Start(ctx context.Context) error {
 		speechActive = true
 		sessionID = nextSessionID()
 
+		l.emit(ListenerEvent{
+			Kind:      ListenerEventVADSpeechStart,
+			SessionID: sessionID,
+			Timestamp: time.Now().UTC(),
+		})
+
+		if l.localSTT != nil {
+			// Two-phase: buffer audio locally, don't start cloud STT yet.
+			debuglog.Printf("continuous listener: speech detected (two-phase), buffering session=%s", sessionID)
+			audioBuf = make([]byte, 0, l.cfg.ChunkSize*4)
+			if len(audioBuf) > 0 {
+				audioBuf = append(audioBuf, audioBuf...)
+			}
+			return
+		}
+
+		// Single-phase: start cloud streaming immediately.
 		debuglog.Printf("continuous listener: speech detected, starting transcription session=%s", sessionID)
 
 		stream, err := l.provider.StartStreaming(ctx, l.cfg.Streaming)
@@ -206,25 +234,77 @@ func (l *ContinuousListener) Start(ctx context.Context) error {
 
 		go consumeTranscriptionEvents(streamSession, aggregator, l.events, eventsDone)
 
-		l.emit(ListenerEvent{
-			Kind:      ListenerEventVADSpeechStart,
-			SessionID: sessionID,
-			Timestamp: time.Now().UTC(),
-		})
-
 		// Send buffered audio.
 		if len(audioBuf) > 0 {
 			_ = streamSession.SendAudio(audioBuf)
 		}
 	}
 
-	// endSpeech closes the streaming session and processes the transcript.
-	// It runs in a goroutine to avoid blocking the read loop during stream teardown.
+	// endSpeech handles end of speech segment.
+	// For two-phase: runs local STT, checks wake phrase, optionally starts cloud STT.
+	// For single-phase: closes the cloud stream and processes the transcript.
+	// It runs in a goroutine to avoid blocking the read loop.
 	endSpeech := func() {
-		if !speechActive || streamSession == nil {
+		if !speechActive {
 			return
 		}
 		speechActive = false
+
+		if l.localSTT != nil {
+			// Two-phase: transcribe locally first.
+			go func() {
+				debuglog.Printf("continuous listener: speech ended (two-phase), running local STT session=%s audio=%d bytes", sessionID, len(audioBuf))
+
+				localText, err := l.localSTT.Transcribe(ctx, audioBuf)
+				if err != nil {
+					debuglog.Printf("continuous listener: local STT failed: %v, falling back to cloud", err)
+					// Fallback: start cloud session with buffered audio.
+					l.startCloudFromBuffer(ctx, audioBuf, sessionID)
+					return
+				}
+
+				if localText == "" {
+					debuglog.Printf("continuous listener: local STT empty session=%s, discarding", sessionID)
+					l.emit(ListenerEvent{
+						Kind:      ListenerEventVADSpeechEnd,
+						SessionID: sessionID,
+						Timestamp: time.Now().UTC(),
+					})
+					l.vad.Reset()
+					return
+				}
+
+				debuglog.Printf("continuous listener: local STT transcript=%q session=%s", localText, sessionID)
+
+				// Check wake phrase on local transcript.
+				if text, ok := l.matchWakePhrase(localText); ok {
+					debuglog.Printf("continuous listener: wake phrase matched (local) session=%s text=%q", sessionID, text)
+					// Start cloud session with buffered audio for high-quality transcription.
+					l.startCloudFromBuffer(ctx, audioBuf, sessionID)
+					l.emit(ListenerEvent{
+						Kind:      ListenerEventWakePhrase,
+						Text:      text,
+						SessionID: sessionID,
+						Timestamp: time.Now().UTC(),
+					})
+				} else {
+					debuglog.Printf("continuous listener: no wake phrase match (local) session=%s raw=%q", sessionID, localText)
+					// Discard — no cloud API call needed.
+					l.emit(ListenerEvent{
+						Kind:      ListenerEventVADSpeechEnd,
+						SessionID: sessionID,
+						Timestamp: time.Now().UTC(),
+					})
+				}
+				l.vad.Reset()
+			}()
+			return
+		}
+
+		// Single-phase: close the cloud stream.
+		if streamSession == nil {
+			return
+		}
 
 		debuglog.Printf("continuous listener: speech ended, closing transcription session=%s", sessionID)
 
@@ -294,8 +374,13 @@ func (l *ContinuousListener) Start(ctx context.Context) error {
 
 			chunk := rd.data
 
-			// Feed audio to active stream if we're in speech.
-			if speechActive && streamSession != nil {
+			// In two-phase mode, buffer audio instead of streaming to cloud.
+			if l.localSTT != nil && speechActive {
+				audioBuf = append(audioBuf, chunk...)
+			}
+
+			// Feed audio to active stream if we're in single-phase speech.
+			if l.localSTT == nil && speechActive && streamSession != nil {
 				_ = streamSession.SendAudio(chunk)
 			}
 
@@ -371,4 +456,22 @@ func (l *ContinuousListener) matchWakePhrase(text string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// startCloudFromBuffer starts a cloud streaming session and replays buffered
+// audio. Used in two-phase mode after local STT detects a wake phrase.
+// Runs synchronously — caller should invoke from a goroutine.
+func (l *ContinuousListener) startCloudFromBuffer(ctx context.Context, audioData []byte, sessionID string) {
+	stream, err := l.provider.StartStreaming(ctx, l.cfg.Streaming)
+	if err != nil {
+		debuglog.Printf("continuous listener: cloud fallback start failed session=%s: %v", sessionID, err)
+		l.events.SessionError(domain.ErrorCodeTranscription, fmt.Sprintf("continuous: cloud start: %v", err))
+		return
+	}
+	defer stream.Close()
+
+	debuglog.Printf("continuous listener: cloud session started session=%s, replaying %d bytes", sessionID, len(audioData))
+	_ = stream.SendAudio(audioData)
+	_ = stream.CloseSend()
+	_ = waitForStream(stream, 4*time.Second)
 }

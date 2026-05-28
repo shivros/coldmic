@@ -863,7 +863,7 @@ func TestConversationController_StartReturnsOnContextCancel(t *testing.T) {
 	t.Parallel()
 
 	sink := &mockConvEventSink{}
-	listener := NewContinuousListener(nil, nil, nil, sink, ContinuousListenerConfig{
+	listener := NewContinuousListener(nil, nil, nil, nil, sink, ContinuousListenerConfig{
 		WakePhrases: []string{"hey alice"},
 		ChunkSize:   4096,
 		SilenceMs:   800,
@@ -916,7 +916,7 @@ func TestConversationController_StartProcessesWakePhraseEvent(t *testing.T) {
 		SilenceMs:   800,
 		FrameMs:     30,
 	}
-	listener := NewContinuousListener(nil, nil, nil, sink, cfg)
+	listener := NewContinuousListener(nil, nil, nil, nil, sink, cfg)
 
 	ctrl := newTestController(backend, tts, sink)
 	ctrl.listener = listener
@@ -976,7 +976,7 @@ func TestConversationController_StartHandlesChannelClose(t *testing.T) {
 		SilenceMs:   800,
 		FrameMs:     30,
 	}
-	listener := NewContinuousListener(nil, nil, nil, sink, cfg)
+	listener := NewContinuousListener(nil, nil, nil, nil, sink, cfg)
 
 	ctrl := newTestController(nil, nil, sink)
 	ctrl.listener = listener

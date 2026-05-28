@@ -153,6 +153,7 @@ func buildTestStack(t *testing.T) (*httptest.Server, *mockConversationBackend, *
 		&mockAudioCapture{},
 		mockVAD{},
 		mockTranscriptionProvider{},
+		nil,
 		eventSink,
 		usecase.ContinuousListenerConfig{
 			WakePhrases: []string{"hey alice", "alice"},

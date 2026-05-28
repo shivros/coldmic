@@ -11,6 +11,7 @@ import (
 	"coldmic/internal/providers/deepgram"
 	"coldmic/internal/providers/edge_tts"
 	"coldmic/internal/providers/openai"
+	"coldmic/internal/providers/whispercpp"
 	"coldmic/internal/rules"
 	"coldmic/internal/usecase"
 )
@@ -107,10 +108,31 @@ func Build(eventSink ports.EventSink, clipboard ports.Clipboard) (Services, erro
 		fmt.Fprintf(os.Stderr, "warning: unknown VAD engine %q, using energy VAD\n", cfg.Continuous.VADEngine)
 		vad = audio.NewEnergyVAD(cfg.Continuous.VADThreshold)
 	}
+	// Wire local STT provider (optional).
+	var localSTT ports.LocalSTT
+	if cfg.Continuous.LocalSTT.Provider != "" {
+		home, _ := os.UserHomeDir()
+		cacheDir := filepath.Join(home, ".cache", "coldmic")
+		switch cfg.Continuous.LocalSTT.Provider {
+		case "whispercpp":
+			stt := whispercpp.NewProvider(whispercpp.Config{
+				CacheDir: cacheDir,
+				Model:    cfg.Continuous.LocalSTT.Model,
+			})
+			if initErr := stt.Init(); initErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: local STT init failed (%v), using cloud-only transcription\n", initErr)
+			} else {
+				localSTT = stt
+			}
+		default:
+			fmt.Fprintf(os.Stderr, "warning: unknown local STT provider %q, using cloud-only transcription\n", cfg.Continuous.LocalSTT.Provider)
+		}
+	}
 	listener := usecase.NewContinuousListener(
 		audioCap,
 		vad,
 		transcriptionProvider,
+		localSTT,
 		eventSink,
 		usecase.ContinuousListenerConfig{
 			WakePhrases:  cfg.Continuous.WakePhrases,

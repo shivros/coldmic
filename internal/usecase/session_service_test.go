@@ -155,6 +155,7 @@ func TestNewSessionServiceWithConversation(t *testing.T) {
 		&fakeAudioCapture{},
 		&fakeVAD{},
 		&fakeProvider{},
+		nil,
 		&fakeEventSink{},
 		ContinuousListenerConfig{},
 	)
@@ -201,6 +202,7 @@ func TestNewSessionServiceWithContinuousStatus(t *testing.T) {
 		&fakeAudioCapture{},
 		&fakeVAD{},
 		&fakeProvider{},
+		nil,
 		&fakeEventSink{},
 		ContinuousListenerConfig{},
 	)
@@ -238,6 +240,7 @@ func TestSessionServiceStartConversationGuardContinuousActive(t *testing.T) {
 		&fakeAudioCapture{},
 		&fakeVAD{},
 		&fakeProvider{},
+		nil,
 		&fakeEventSink{},
 		ContinuousListenerConfig{},
 	)
