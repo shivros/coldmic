@@ -604,12 +604,14 @@ func setupWebSocketPair(t *testing.T) (*websocket.Conn, *websocket.Conn, *httpte
 
 	upgrader := websocket.Upgrader{}
 	var serverConn *websocket.Conn
+	ready := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var err error
 		serverConn, err = upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			t.Logf("upgrade error: %v", err)
 		}
+		close(ready)
 	}))
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -619,5 +621,6 @@ func setupWebSocketPair(t *testing.T) (*websocket.Conn, *websocket.Conn, *httpte
 		t.Fatalf("dial failed: %v", err)
 	}
 
+	<-ready
 	return serverConn, clientConn, server
 }
