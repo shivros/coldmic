@@ -839,3 +839,290 @@ func TestValidTransitionsComplete(t *testing.T) {
 		}
 	}
 }
+
+// --- Start method tests ---
+
+func TestConversationController_StartReturnsErrConversationActiveIfRunning(t *testing.T) {
+	t.Parallel()
+
+	sink := &mockConvEventSink{}
+	ctrl := newTestController(nil, nil, sink)
+
+	// Manually set running to true.
+	ctrl.mu.Lock()
+	ctrl.running = true
+	ctrl.mu.Unlock()
+
+	err := ctrl.Start(context.Background())
+	if err != domain.ErrConversationActive {
+		t.Fatalf("expected ErrConversationActive, got %v", err)
+	}
+}
+
+func TestConversationController_StartReturnsOnContextCancel(t *testing.T) {
+	t.Parallel()
+
+	sink := &mockConvEventSink{}
+	listener := NewContinuousListener(nil, nil, nil, sink, ContinuousListenerConfig{
+		WakePhrases: []string{"hey alice"},
+		ChunkSize:   4096,
+		SilenceMs:   800,
+		FrameMs:     30,
+	})
+	ctrl := newTestController(nil, nil, sink)
+	ctrl.listener = listener
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ctrl.Start(ctx)
+	}()
+
+	// Give it a moment to start.
+	time.Sleep(50 * time.Millisecond)
+
+	if !ctrl.Running() {
+		t.Fatal("expected controller to be running")
+	}
+
+	// Cancel the context.
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err != context.Canceled {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Start did not return after context cancellation")
+	}
+
+	if ctrl.Running() {
+		t.Fatal("expected controller to not be running after cancellation")
+	}
+}
+
+func TestConversationController_StartProcessesWakePhraseEvent(t *testing.T) {
+	t.Parallel()
+
+	backend := &mockConversationBackend{}
+	tts := &mockTTS{}
+	sink := &mockConvEventSink{}
+
+	cfg := ContinuousListenerConfig{
+		WakePhrases: []string{"hey alice"},
+		ChunkSize:   4096,
+		SilenceMs:   800,
+		FrameMs:     30,
+	}
+	listener := NewContinuousListener(nil, nil, nil, sink, cfg)
+
+	ctrl := newTestController(backend, tts, sink)
+	ctrl.listener = listener
+	ctrl.cfg.SilenceTimeout = 100 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ctrl.Start(ctx)
+	}()
+
+	// Send a wake phrase event through the listener's event channel.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		listener.outCh <- ListenerEvent{
+			Kind:      ListenerEventWakePhrase,
+			Text:      "",
+			SessionID: "test-session",
+		}
+		// Give time for processing, then cancel.
+		time.Sleep(200 * time.Millisecond)
+		cancel()
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != context.Canceled {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Start did not return")
+	}
+
+	// Verify the wake phrase was processed (state should have changed).
+	states := sink.getStates()
+	found := false
+	for _, s := range states {
+		if s.state == domain.ConvStateListening && s.reason == domain.ConvReasonWakeDetected {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected wake_detected state change, got: %+v", states)
+	}
+}
+
+func TestConversationController_StartHandlesChannelClose(t *testing.T) {
+	t.Parallel()
+
+	sink := &mockConvEventSink{}
+	cfg := ContinuousListenerConfig{
+		WakePhrases: []string{"hey alice"},
+		ChunkSize:   4096,
+		SilenceMs:   800,
+		FrameMs:     30,
+	}
+	listener := NewContinuousListener(nil, nil, nil, sink, cfg)
+
+	ctrl := newTestController(nil, nil, sink)
+	ctrl.listener = listener
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ctrl.Start(context.Background())
+	}()
+
+	// Close the event channel to simulate listener shutdown.
+	time.Sleep(50 * time.Millisecond)
+	close(listener.outCh)
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("expected nil error on channel close, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Start did not return after channel close")
+	}
+}
+
+func TestConversationController_HandleSpeechEndResetsTimer(t *testing.T) {
+	t.Parallel()
+
+	sink := &mockConvEventSink{}
+	ctrl := newTestController(nil, nil, sink)
+
+	// Set state to LISTENING.
+	ctrl.mu.Lock()
+	ctrl.state = domain.ConvStateListening
+	ctrl.sessionID = "test-session"
+	ctrl.mu.Unlock()
+
+	ctrl.handleSpeechEnd(context.Background(), ListenerEvent{
+		Kind:      ListenerEventVADSpeechEnd,
+		SessionID: "test-session",
+	})
+
+	// State should remain LISTENING.
+	if ctrl.State() != domain.ConvStateListening {
+		t.Errorf("expected LISTENING, got %s", ctrl.State())
+	}
+
+	// Silence timer should have been reset.
+	ctrl.mu.Lock()
+	timer := ctrl.silenceTimer
+	ctrl.mu.Unlock()
+
+	if timer == nil {
+		t.Error("expected silence timer to be set after speech end")
+	}
+}
+
+func TestConversationController_HandleSpeechEndIgnoredWhenNotListening(t *testing.T) {
+	t.Parallel()
+
+	sink := &mockConvEventSink{}
+	ctrl := newTestController(nil, nil, sink)
+
+	// State is IDLE by default.
+	ctrl.handleSpeechEnd(context.Background(), ListenerEvent{
+		Kind:      ListenerEventVADSpeechEnd,
+		SessionID: "test-session",
+	})
+
+	// Silence timer should NOT be set.
+	ctrl.mu.Lock()
+	timer := ctrl.silenceTimer
+	ctrl.mu.Unlock()
+
+	if timer != nil {
+		t.Error("expected no silence timer when not in LISTENING state")
+	}
+}
+
+func TestConversationController_StopWithSessionIDAndBackend(t *testing.T) {
+	t.Parallel()
+
+	backend := &mockConversationBackend{}
+	sink := &mockConvEventSink{}
+	ctrl := newTestController(backend, nil, sink)
+
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ctrl.mu.Lock()
+	ctrl.state = domain.ConvStateListening
+	ctrl.running = true
+	ctrl.cancel = cancel
+	ctrl.sessionID = "test-session"
+	ctrl.mu.Unlock()
+
+	ctrl.Stop()
+
+	if ctrl.Running() {
+		t.Error("expected controller to not be running after stop")
+	}
+	if ctrl.State() != domain.ConvStateIdle {
+		t.Errorf("expected state IDLE after stop, got %s", ctrl.State())
+	}
+
+	// State change event should have been emitted.
+	states := sink.getStates()
+	found := false
+	for _, s := range states {
+		if s.state == domain.ConvStateIdle && s.reason == domain.ConvReasonManualStop {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected manual_stop idle event, got: %+v", states)
+	}
+}
+
+func TestConversationController_StopCleansUpSilenceTimer(t *testing.T) {
+	t.Parallel()
+
+	sink := &mockConvEventSink{}
+	ctrl := newTestController(nil, nil, sink)
+
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ctrl.mu.Lock()
+	ctrl.state = domain.ConvStateListening
+	ctrl.running = true
+	ctrl.cancel = cancel
+	ctrl.sessionID = "test-session"
+	ctrl.silenceTimer = time.NewTimer(30 * time.Second)
+	ctrl.silenceCh = ctrl.silenceTimer.C
+	ctrl.mu.Unlock()
+
+	ctrl.Stop()
+
+	ctrl.mu.Lock()
+	timer := ctrl.silenceTimer
+	ch := ctrl.silenceCh
+	ctrl.mu.Unlock()
+
+	if timer != nil {
+		t.Error("expected silence timer to be nil after stop")
+	}
+	if ch != nil {
+		t.Error("expected silence channel to be nil after stop")
+	}
+}

@@ -202,6 +202,85 @@ func TestContinuousListenerWakePhraseEmptyPhrases(t *testing.T) {
 	}
 }
 
+func TestContinuousListenerEventsReturnsChannel(t *testing.T) {
+	t.Parallel()
+
+	cfg := ContinuousListenerConfig{
+		WakePhrases: []string{"hey alice"},
+	}
+	events := &fakeEventSink{}
+	listener := NewContinuousListener(nil, nil, nil, events, cfg)
+
+	ch := listener.Events()
+	if ch == nil {
+		t.Fatal("expected non-nil events channel")
+	}
+
+	// Should be the same channel as the internal outCh.
+	if ch != listener.Events() {
+		t.Fatal("expected Events() to return the same channel")
+	}
+}
+
+func TestContinuousListenerEmitSendsToChannel(t *testing.T) {
+	t.Parallel()
+
+	cfg := ContinuousListenerConfig{
+		WakePhrases: []string{"hey alice"},
+	}
+	events := &fakeEventSink{}
+	listener := NewContinuousListener(nil, nil, nil, events, cfg)
+
+	evt := ListenerEvent{
+		Kind:      ListenerEventWakePhrase,
+		Text:      "test",
+		SessionID: "session-1",
+	}
+	listener.emit(evt)
+
+	select {
+	case got := <-listener.Events():
+		if got.Kind != ListenerEventWakePhrase || got.Text != "test" || got.SessionID != "session-1" {
+			t.Fatalf("unexpected event: %+v", got)
+		}
+	default:
+		t.Fatal("expected event on channel")
+	}
+}
+
+func TestContinuousListenerEmitDropsWhenFull(t *testing.T) {
+	t.Parallel()
+
+	cfg := ContinuousListenerConfig{
+		WakePhrases: []string{"hey alice"},
+	}
+	events := &fakeEventSink{}
+	listener := NewContinuousListener(nil, nil, nil, events, cfg)
+
+	// Fill the channel (capacity is 32).
+	for i := 0; i < 32; i++ {
+		listener.emit(ListenerEvent{Kind: ListenerEventTranscript, Text: "fill"})
+	}
+
+	// This emit should be dropped (channel full).
+	listener.emit(ListenerEvent{Kind: ListenerEventWakePhrase, Text: "dropped"})
+
+	// Drain and verify all events are "fill".
+	count := 0
+	for {
+		select {
+		case <-listener.Events():
+			count++
+		default:
+			goto done
+		}
+	}
+done:
+	if count != 32 {
+		t.Fatalf("expected 32 events, got %d", count)
+	}
+}
+
 // fakeEOFSession immediately returns EOF on Read.
 type fakeEOFSession struct{}
 
