@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 
@@ -285,4 +288,336 @@ func TestStreamingSessionWaitNoErrorAndSetErrNil(t *testing.T) {
 	if err := s.Wait(); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
+}
+
+func TestStreamingSessionClose(t *testing.T) {
+	t.Parallel()
+
+	_, client, server := setupWebSocketPair(t)
+	defer server.Close()
+
+	events := make(chan domain.TranscriptEvent, 64)
+	audio := make(chan []byte, 32)
+	done := make(chan struct{})
+
+	s := &streamingSession{
+		conn:   client,
+		events: events,
+		audio:  audio,
+		done:   done,
+	}
+
+	s.wg.Add(2)
+	go s.readLoop()
+	go s.writeLoop()
+	go func() {
+		s.wg.Wait()
+		close(events)
+		close(done)
+		_ = client.Close()
+	}()
+
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+}
+
+func TestStreamingSessionWriteLoopSendsAudioAndCloseStream(t *testing.T) {
+	t.Parallel()
+
+	upgrader := websocket.Upgrader{}
+	serverResult := make(chan []byte, 2)
+	closeStreamMsg := make(chan string, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Logf("upgrade error: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		for {
+			msgType, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if msgType == websocket.BinaryMessage {
+				serverResult <- msg
+			} else if msgType == websocket.TextMessage {
+				closeStreamMsg <- string(msg)
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	client, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+
+	events := make(chan domain.TranscriptEvent, 64)
+	audio := make(chan []byte, 32)
+	done := make(chan struct{})
+
+	s := &streamingSession{
+		conn:   client,
+		events: events,
+		audio:  audio,
+		done:   done,
+	}
+
+	s.wg.Add(1)
+	go s.writeLoop()
+	go func() {
+		s.wg.Wait()
+		close(events)
+		close(done)
+		_ = client.Close()
+	}()
+
+	// Send an audio chunk.
+	audio <- []byte("audio-data")
+	close(audio)
+
+	// Verify server received the binary chunk.
+	select {
+	case msg := <-serverResult:
+		if string(msg) != "audio-data" {
+			t.Fatalf("unexpected binary message: %q", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for binary message")
+	}
+
+	// Verify server received the CloseStream message.
+	select {
+	case msg := <-closeStreamMsg:
+		if !strings.Contains(msg, "CloseStream") {
+			t.Fatalf("expected CloseStream message, got: %q", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for CloseStream message")
+	}
+}
+
+func TestStreamingSessionReadLoopParsesResponses(t *testing.T) {
+	t.Parallel()
+
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		// Send partial response.
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(
+			`{"type":"Results","is_final":false,"speech_final":false,"channel":{"alternatives":[{"transcript":"hello"}]}}`))
+
+		// Send final response.
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(
+			`{"type":"Results","is_final":true,"speech_final":true,"channel":{"alternatives":[{"transcript":"hello world"}]}}`))
+
+		// Send error response.
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(
+			`{"type":"Error","message":"test error"}`))
+
+		// Wait for client to disconnect.
+		time.Sleep(500 * time.Millisecond)
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	client, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+
+	events := make(chan domain.TranscriptEvent, 64)
+	audio := make(chan []byte, 32)
+	done := make(chan struct{})
+
+	s := &streamingSession{
+		conn:   client,
+		events: events,
+		audio:  audio,
+		done:   done,
+	}
+
+	s.wg.Add(1)
+	go s.readLoop()
+	go func() {
+		s.wg.Wait()
+		close(events)
+		close(done)
+		_ = client.Close()
+	}()
+
+	// Read partial event.
+	select {
+	case evt := <-events:
+		if evt.Kind != domain.TranscriptKindPartial || evt.Text != "hello" {
+			t.Fatalf("unexpected partial event: %+v", evt)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for partial event")
+	}
+
+	// Read final event.
+	select {
+	case evt := <-events:
+		if evt.Kind != domain.TranscriptKindFinal || evt.Text != "hello world" || !evt.IsSpeechFinal {
+			t.Fatalf("unexpected final event: %+v", evt)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for final event")
+	}
+
+	// Read error event (emitted as final with empty text).
+	select {
+	case evt := <-events:
+		if evt.Kind != domain.TranscriptKindFinal || !evt.IsSpeechFinal {
+			t.Fatalf("unexpected error event: %+v", evt)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for error event")
+	}
+}
+
+func TestStreamingSessionReadLoopIgnoresNonJSON(t *testing.T) {
+	t.Parallel()
+
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		// Send non-JSON binary message.
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(`not-json`))
+
+		// Then a valid response.
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(
+			`{"type":"Results","is_final":true,"speech_final":true,"channel":{"alternatives":[{"transcript":"valid"}]}}`))
+
+		time.Sleep(500 * time.Millisecond)
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	client, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+
+	events := make(chan domain.TranscriptEvent, 64)
+	audio := make(chan []byte, 32)
+	done := make(chan struct{})
+
+	s := &streamingSession{
+		conn:   client,
+		events: events,
+		audio:  audio,
+		done:   done,
+	}
+
+	s.wg.Add(1)
+	go s.readLoop()
+	go func() {
+		s.wg.Wait()
+		close(events)
+		close(done)
+		_ = client.Close()
+	}()
+
+	// Should get the valid response only, non-JSON is ignored.
+	select {
+	case evt := <-events:
+		if evt.Text != "valid" {
+			t.Fatalf("unexpected event: %+v", evt)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for event")
+	}
+}
+
+func TestStreamingSessionWriteLoopError(t *testing.T) {
+	t.Parallel()
+
+	// Create a session with an already-closed connection to trigger write error.
+	events := make(chan domain.TranscriptEvent, 64)
+	audio := make(chan []byte, 32)
+	done := make(chan struct{})
+
+	// Use a closed connection.
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, _ := upgrader.Upgrade(w, r, nil)
+		if conn != nil {
+			conn.Close()
+		}
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	client, _, _ := websocket.DefaultDialer.Dial(wsURL, nil)
+	if client != nil {
+		client.Close()
+	}
+
+	s := &streamingSession{
+		conn:   client,
+		events: events,
+		audio:  audio,
+		done:   done,
+	}
+
+	// Send audio to trigger write.
+	audio <- []byte("will-fail")
+	close(audio)
+
+	s.wg.Add(1)
+	go s.writeLoop()
+	go func() {
+		s.wg.Wait()
+		close(events)
+		close(done)
+	}()
+
+	// Wait for completion.
+	select {
+	case <-done:
+		// Expected: write loop exited with error.
+	case <-time.After(2 * time.Second):
+		t.Fatal("write loop did not finish")
+	}
+}
+
+func setupWebSocketPair(t *testing.T) (*websocket.Conn, *websocket.Conn, *httptest.Server) {
+	t.Helper()
+
+	upgrader := websocket.Upgrader{}
+	var serverConn *websocket.Conn
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		serverConn, err = upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Logf("upgrade error: %v", err)
+		}
+	}))
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	clientConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		server.Close()
+		t.Fatalf("dial failed: %v", err)
+	}
+
+	return serverConn, clientConn, server
 }

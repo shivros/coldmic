@@ -230,6 +230,94 @@ func TestClientCallDefaultHTTPErrorBranch(t *testing.T) {
 	}
 }
 
+func TestClientConversationStartSuccess(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/conversation/start" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"status":{"state":"listening","active":true,"sessionId":"conv-1"}}`))
+	}))
+	defer server.Close()
+
+	status, err := NewClient(server.URL).ConversationStart(context.Background())
+	if err != nil {
+		t.Fatalf("conversation start failed: %v", err)
+	}
+	if status.State != "listening" || !status.Active || status.SessionID != "conv-1" {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestClientConversationStopSuccess(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/conversation/stop" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"status":{"state":"idle","active":false}}`))
+	}))
+	defer server.Close()
+
+	status, err := NewClient(server.URL).ConversationStop(context.Background())
+	if err != nil {
+		t.Fatalf("conversation stop failed: %v", err)
+	}
+	if status.State != "idle" || status.Active {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestClientConversationStatusSuccess(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/conversation/status" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"status":{"state":"listening","active":true,"sessionId":"conv-1"}}`))
+	}))
+	defer server.Close()
+
+	status, err := NewClient(server.URL).ConversationStatus(context.Background())
+	if err != nil {
+		t.Fatalf("conversation status failed: %v", err)
+	}
+	if status.State != "listening" || !status.Active || status.SessionID != "conv-1" {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestClientConversationStartReturnsHTTPError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"ok":false,"error":"no active conversation"}`))
+	}))
+	defer server.Close()
+
+	_, err := NewClient(server.URL).ConversationStart(context.Background())
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	var httpErr HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("expected HTTPError, got %T", err)
+	}
+	if httpErr.StatusCode != http.StatusConflict {
+		t.Fatalf("unexpected code: %d", httpErr.StatusCode)
+	}
+	if httpErr.Message != "no active conversation" {
+		t.Fatalf("unexpected message: %s", httpErr.Message)
+	}
+}
+
 func TestClientCallPayloadSetsJSONHeader(t *testing.T) {
 	t.Parallel()
 
