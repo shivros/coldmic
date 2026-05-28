@@ -2,6 +2,8 @@ package bootstrap
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"coldmic/internal/audio"
 	"coldmic/internal/config"
@@ -84,7 +86,27 @@ func Build(eventSink ports.EventSink, clipboard ports.Clipboard) (Services, erro
 	}
 
 	// Wire continuous listener with VAD.
-	vad := audio.NewEnergyVAD(cfg.Continuous.VADThreshold)
+	var vad audio.VAD
+	switch cfg.Continuous.VADEngine {
+	case "silero":
+		home, _ := os.UserHomeDir()
+		modelDir := filepath.Join(home, ".cache", "coldmic")
+		sileroVAD, createErr := audio.NewSileroVAD(modelDir, 0.5)
+		if createErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: silero VAD creation failed (%v), falling back to energy VAD\n", createErr)
+			vad = audio.NewEnergyVAD(cfg.Continuous.VADThreshold)
+		} else if initErr := sileroVAD.Init(); initErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: silero VAD init failed (%v), falling back to energy VAD\n", initErr)
+			vad = audio.NewEnergyVAD(cfg.Continuous.VADThreshold)
+		} else {
+			vad = sileroVAD
+		}
+	case "energy":
+		vad = audio.NewEnergyVAD(cfg.Continuous.VADThreshold)
+	default:
+		fmt.Fprintf(os.Stderr, "warning: unknown VAD engine %q, using energy VAD\n", cfg.Continuous.VADEngine)
+		vad = audio.NewEnergyVAD(cfg.Continuous.VADThreshold)
+	}
 	listener := usecase.NewContinuousListener(
 		audioCap,
 		vad,

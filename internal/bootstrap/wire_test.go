@@ -60,3 +60,36 @@ func (noopEventSink) ConversationStateChanged(_ domain.ConversationState, _ doma
 type noopClipboard struct{}
 
 func (noopClipboard) SetText(_ context.Context, _ string) error { return nil }
+
+func TestBuildWithEnergyVAD(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("DEEPGRAM_API_KEY", "test-key")
+	t.Setenv("COLDMIC_VAD_ENGINE", "energy")
+
+	services, err := Build(noopEventSink{}, noopClipboard{})
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+	if services.Controller == nil {
+		t.Fatalf("expected controller")
+	}
+	if services.ConversationController == nil {
+		t.Fatalf("expected conversation controller")
+	}
+}
+
+func TestBuildWithUnknownVADEngine(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("DEEPGRAM_API_KEY", "test-key")
+	t.Setenv("COLDMIC_VAD_ENGINE", "nonexistent-vad")
+
+	services, err := Build(noopEventSink{}, noopClipboard{})
+	if err != nil {
+		t.Fatalf("build should succeed with unknown VAD engine (falls back): %v", err)
+	}
+	if services.Controller == nil {
+		t.Fatalf("expected controller")
+	}
+}

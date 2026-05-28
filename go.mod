@@ -5,6 +5,7 @@ go 1.23
 require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/wailsapp/wails/v2 v2.11.0
+	github.com/yalue/onnxruntime_go v1.24.0
 )
 
 require (

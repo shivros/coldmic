@@ -61,7 +61,8 @@ type ConversationConfig struct {
 
 type ContinuousConfig struct {
 	WakePhrases  []string
-	VADThreshold float64
+	VADEngine    string  // "silero" (default) or "energy"
+	VADThreshold float64 // Used by EnergyVAD (RMS threshold) and SileroVAD (speech probability threshold)
 	SilenceMs    int
 	FrameMs      int
 }
@@ -117,19 +118,20 @@ func Load() (Config, error) {
 			StreamingGrace: time.Duration(firstNonNegativeInt("COLDMIC_STREAMING_GRACE_MS", "DEEPGRAM_STREAMING_GRACE_MS", 1000)) * time.Millisecond,
 		},
 		Conversation: ConversationConfig{
-			Provider:     envOrDefault("COLDMIC_CONVERSATION_BACKEND", "openai"),
-			BaseURL:      envOrDefault("COLDMIC_BACKEND_BASE_URL", "https://api.openai.com/v1"),
-			APIKey:       strings.TrimSpace(os.Getenv("COLDMIC_BACKEND_API_KEY")),
-			Model:        envOrDefault("COLDMIC_BACKEND_MODEL", "gpt-4o"),
-			SystemPrompt: envOrDefault("COLDMIC_BACKEND_SYSTEM_PROMPT", "You are a helpful voice assistant."),
-			Stream:       envOrDefaultBool("COLDMIC_BACKEND_STREAM", true),
-			Timeout:      envOrDefaultDuration("COLDMIC_BACKEND_TIMEOUT", 30*time.Second),
-			MaxHistory:   envOrDefaultInt("COLDMIC_BACKEND_MAX_HISTORY", 20),
+			Provider:       envOrDefault("COLDMIC_CONVERSATION_BACKEND", "openai"),
+			BaseURL:        envOrDefault("COLDMIC_BACKEND_BASE_URL", "https://api.openai.com/v1"),
+			APIKey:         strings.TrimSpace(os.Getenv("COLDMIC_BACKEND_API_KEY")),
+			Model:          envOrDefault("COLDMIC_BACKEND_MODEL", "gpt-4o"),
+			SystemPrompt:   envOrDefault("COLDMIC_BACKEND_SYSTEM_PROMPT", "You are a helpful voice assistant."),
+			Stream:         envOrDefaultBool("COLDMIC_BACKEND_STREAM", true),
+			Timeout:        envOrDefaultDuration("COLDMIC_BACKEND_TIMEOUT", 30*time.Second),
+			MaxHistory:     envOrDefaultInt("COLDMIC_BACKEND_MAX_HISTORY", 20),
 			StopPhrases:    parseStopPhrases(envOrDefault("COLDMIC_STOP_PHRASES", "thanks alice,that's all,goodbye,bye alice,stop")),
 			SilenceTimeout: envOrDefaultDuration("COLDMIC_CONVERSATION_TIMEOUT", 30*time.Second),
 		},
 		Continuous: ContinuousConfig{
 			WakePhrases:  parseWakePhrases(envOrDefault("COLDMIC_WAKE_PHRASES", "hey alice,alice")),
+			VADEngine:    envOrDefault("COLDMIC_VAD_ENGINE", "silero"),
 			VADThreshold: envOrDefaultFloat("COLDMIC_VAD_THRESHOLD", 500),
 			SilenceMs:    envOrDefaultInt("COLDMIC_VAD_SILENCE_MS", 800),
 			FrameMs:      envOrDefaultInt("COLDMIC_VAD_FRAME_MS", 30),

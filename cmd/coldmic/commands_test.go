@@ -491,33 +491,33 @@ func (f fakeConfig) ToggleCompatEnabled() bool {
 }
 
 type fakeSessionClient struct {
-	startCalls      int
-	stopCalls       int
-	abortCalls      int
-	statusCalls     int
-	transcriptCalls int
-	conversationStartCalls int
-	conversationStopCalls  int
+	startCalls              int
+	stopCalls               int
+	abortCalls              int
+	statusCalls             int
+	transcriptCalls         int
+	conversationStartCalls  int
+	conversationStopCalls   int
 	conversationStatusCalls int
 
-	startStatus  domain.Status
-	stopStatus   domain.Status
-	stopResult   domain.StopResult
-	abortStatus  domain.Status
-	statusStatus domain.Status
-	transcriptAt time.Time
-	transcript   domain.StopResult
+	startStatus             domain.Status
+	stopStatus              domain.Status
+	stopResult              domain.StopResult
+	abortStatus             domain.Status
+	statusStatus            domain.Status
+	transcriptAt            time.Time
+	transcript              domain.StopResult
 	conversationStartStatus domain.ConversationStatus
 	conversationStopStatus  domain.ConversationStatus
 	conversationStatusVal   domain.ConversationStatus
 
-	startErr      error
-	stopErr       error
-	abortErr      error
-	statusErr     error
-	transcriptErr error
-	conversationStartErr error
-	conversationStopErr  error
+	startErr              error
+	stopErr               error
+	abortErr              error
+	statusErr             error
+	transcriptErr         error
+	conversationStartErr  error
+	conversationStopErr   error
 	conversationStatusErr error
 }
 

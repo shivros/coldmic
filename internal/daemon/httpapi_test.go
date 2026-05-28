@@ -472,3 +472,75 @@ func TestAPIContinuousStopMethodNotAllowed(t *testing.T) {
 		t.Fatalf("unexpected code: %d", rec.Code)
 	}
 }
+
+func TestAPIConversationStartSuccess(t *testing.T) {
+	t.Parallel()
+	api := NewAPI(&fakeService{})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/conversation/start", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+}
+
+func TestAPIConversationStartConflict(t *testing.T) {
+	t.Parallel()
+	api := NewAPI(&fakeService{convStartErr: domain.ErrConversationActive})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/conversation/start", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+}
+
+func TestAPIConversationStopSuccess(t *testing.T) {
+	t.Parallel()
+	api := NewAPI(&fakeService{})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/conversation/stop", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+}
+
+func TestAPIConversationStopConflict(t *testing.T) {
+	t.Parallel()
+	api := NewAPI(&fakeService{convStopErr: domain.ErrNoConversationActive})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/conversation/stop", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+}
+
+func TestAPIConversationStatusSuccess(t *testing.T) {
+	t.Parallel()
+	api := NewAPI(&fakeService{convStatus: domain.ConversationStatus{State: domain.ConvStateListening, Active: true}})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/conversation/status", nil)
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected code: %d", rec.Code)
+	}
+	var got ConversationStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Status.State != domain.ConvStateListening || !got.Status.Active || !got.OK {
+		t.Fatalf("unexpected conversation status response: %+v", got)
+	}
+}

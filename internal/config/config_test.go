@@ -127,3 +127,144 @@ func TestLoadInvalidNumericValuesFallback(t *testing.T) {
 		t.Fatalf("expected default smart format true")
 	}
 }
+
+func TestLoadContinuousConfigDefaults(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if cfg.Continuous.VADEngine != "silero" {
+		t.Fatalf("expected default VADEngine=silero, got %q", cfg.Continuous.VADEngine)
+	}
+	if cfg.Continuous.VADThreshold != 500 {
+		t.Fatalf("expected default VADThreshold=500, got %v", cfg.Continuous.VADThreshold)
+	}
+	if cfg.Continuous.SilenceMs != 800 {
+		t.Fatalf("expected default SilenceMs=800, got %d", cfg.Continuous.SilenceMs)
+	}
+	if cfg.Continuous.FrameMs != 30 {
+		t.Fatalf("expected default FrameMs=30, got %d", cfg.Continuous.FrameMs)
+	}
+	if len(cfg.Continuous.WakePhrases) != 2 || cfg.Continuous.WakePhrases[0] != "hey alice" {
+		t.Fatalf("expected default wake phrases, got %v", cfg.Continuous.WakePhrases)
+	}
+}
+
+func TestLoadContinuousConfigOverrides(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("COLDMIC_VAD_ENGINE", "energy")
+	t.Setenv("COLDMIC_VAD_THRESHOLD", "250")
+	t.Setenv("COLDMIC_VAD_SILENCE_MS", "500")
+	t.Setenv("COLDMIC_VAD_FRAME_MS", "48")
+	t.Setenv("COLDMIC_WAKE_PHRASES", "hey computer,ok google")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if cfg.Continuous.VADEngine != "energy" {
+		t.Fatalf("expected VADEngine=energy, got %q", cfg.Continuous.VADEngine)
+	}
+	if cfg.Continuous.VADThreshold != 250 {
+		t.Fatalf("expected VADThreshold=250, got %v", cfg.Continuous.VADThreshold)
+	}
+	if cfg.Continuous.SilenceMs != 500 {
+		t.Fatalf("expected SilenceMs=500, got %d", cfg.Continuous.SilenceMs)
+	}
+	if cfg.Continuous.FrameMs != 48 {
+		t.Fatalf("expected FrameMs=48, got %d", cfg.Continuous.FrameMs)
+	}
+	if len(cfg.Continuous.WakePhrases) != 2 || cfg.Continuous.WakePhrases[0] != "hey computer" {
+		t.Fatalf("expected custom wake phrases, got %v", cfg.Continuous.WakePhrases)
+	}
+}
+
+func TestLoadContinuousConfigInvalidValues(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("COLDMIC_VAD_THRESHOLD", "not-a-number")
+	t.Setenv("COLDMIC_VAD_SILENCE_MS", "bad")
+	t.Setenv("COLDMIC_VAD_FRAME_MS", "bad")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	// Should fall back to defaults for invalid values.
+	if cfg.Continuous.VADThreshold != 500 {
+		t.Fatalf("expected default VADThreshold for bad input, got %v", cfg.Continuous.VADThreshold)
+	}
+	if cfg.Continuous.SilenceMs != 800 {
+		t.Fatalf("expected default SilenceMs for bad input, got %d", cfg.Continuous.SilenceMs)
+	}
+	if cfg.Continuous.FrameMs != 30 {
+		t.Fatalf("expected default FrameMs for bad input, got %d", cfg.Continuous.FrameMs)
+	}
+}
+
+func TestLoadTTSConfigDefaults(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if cfg.TTS.Engine != "edge-tts" {
+		t.Fatalf("expected default TTS engine, got %q", cfg.TTS.Engine)
+	}
+	if cfg.TTS.Voice != "en-US-AriaNeural" {
+		t.Fatalf("expected default TTS voice, got %q", cfg.TTS.Voice)
+	}
+	if cfg.TTS.PlaybackCmd != "ffplay" {
+		t.Fatalf("expected default playback cmd, got %q", cfg.TTS.PlaybackCmd)
+	}
+}
+
+func TestLoadConversationConfigDefaults(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if cfg.Conversation.Provider != "openai" {
+		t.Fatalf("expected default provider openai, got %q", cfg.Conversation.Provider)
+	}
+	if cfg.Conversation.MaxHistory != 20 {
+		t.Fatalf("expected default MaxHistory=20, got %d", cfg.Conversation.MaxHistory)
+	}
+}
+
+func TestEnvOrDefaultDuration(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("COLDMIC_CONVERSATION_TIMEOUT", "10s")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if cfg.Conversation.SilenceTimeout != 10*time.Second {
+		t.Fatalf("expected 10s timeout, got %v", cfg.Conversation.SilenceTimeout)
+	}
+}
+
+func TestEnvOrDefaultDurationInvalid(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("COLDMIC_CONVERSATION_TIMEOUT", "not-a-duration")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if cfg.Conversation.SilenceTimeout != 30*time.Second {
+		t.Fatalf("expected default 30s timeout for bad input, got %v", cfg.Conversation.SilenceTimeout)
+	}
+}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"coldmic/internal/domain"
 	"coldmic/internal/ports"
 )
 
@@ -192,5 +193,96 @@ func TestStreamingSessionSetErrFirstWins(t *testing.T) {
 	s.setErr(errors.New("second"))
 	if s.waitErr() == nil || s.waitErr().Error() != "first" {
 		t.Fatalf("expected first error to win")
+	}
+}
+
+func TestStreamingSessionEventsReturnsChannel(t *testing.T) {
+	t.Parallel()
+
+	ch := make(chan domain.TranscriptEvent, 1)
+	s := &streamingSession{events: ch}
+	if got := s.Events(); got != ch {
+		t.Fatalf("expected same events channel")
+	}
+}
+
+func TestStreamingSessionWaitReturnsStoredError(t *testing.T) {
+	t.Parallel()
+
+	done := make(chan struct{})
+	s := &streamingSession{done: done}
+	s.setErr(errors.New("boom"))
+	close(done)
+	if err := s.Wait(); err == nil || err.Error() != "boom" {
+		t.Fatalf("expected stored error, got %v", err)
+	}
+}
+
+func TestStreamingSessionEmit(t *testing.T) {
+	t.Parallel()
+
+	t.Run("writes when channel has room", func(t *testing.T) {
+		s := &streamingSession{events: make(chan domain.TranscriptEvent, 1), done: make(chan struct{})}
+		event := domain.TranscriptEvent{Kind: domain.TranscriptKindPartial, Text: "hi"}
+		s.emit(event)
+		got := <-s.events
+		if got.Text != "hi" || got.Kind != domain.TranscriptKindPartial {
+			t.Fatalf("unexpected event: %+v", got)
+		}
+	})
+
+	t.Run("drops when done is closed", func(t *testing.T) {
+		done := make(chan struct{})
+		close(done)
+		s := &streamingSession{events: make(chan domain.TranscriptEvent), done: done}
+		s.emit(domain.TranscriptEvent{Text: "ignored"})
+	})
+
+	t.Run("drops when channel full", func(t *testing.T) {
+		ch := make(chan domain.TranscriptEvent, 1)
+		ch <- domain.TranscriptEvent{Text: "first"}
+		s := &streamingSession{events: ch, done: make(chan struct{})}
+		s.emit(domain.TranscriptEvent{Text: "second"})
+		got := <-ch
+		if got.Text != "first" {
+			t.Fatalf("expected original event to remain, got %+v", got)
+		}
+	})
+}
+
+func TestTruncateForLog(t *testing.T) {
+	t.Parallel()
+
+	if got := truncateForLog("hello", 0); got != "hello" {
+		t.Fatalf("expected original for max<=0, got %q", got)
+	}
+	if got := truncateForLog("hello", 10); got != "hello" {
+		t.Fatalf("expected original when under max, got %q", got)
+	}
+	if got := truncateForLog("hello world", 5); got != "hello..." {
+		t.Fatalf("unexpected truncation: %q", got)
+	}
+}
+
+func TestIsExpectedShutdownErrFalseCases(t *testing.T) {
+	t.Parallel()
+
+	if isExpectedShutdownErr(errors.New("boom")) {
+		t.Fatal("plain error should not be expected shutdown")
+	}
+	if isExpectedShutdownErr(&websocket.CloseError{Code: websocket.CloseAbnormalClosure, Text: "bad"}) {
+		t.Fatal("abnormal close should not be expected shutdown")
+	}
+}
+
+func TestStreamingSessionWaitNoErrorAndSetErrNil(t *testing.T) {
+	t.Parallel()
+
+	done := make(chan struct{})
+	s := &streamingSession{done: done}
+	s.setErr(nil)
+	close(done)
+	if err := s.Wait(); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
 	}
 }

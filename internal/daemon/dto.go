@@ -29,6 +29,6 @@ type LatestTranscriptResponse struct {
 }
 
 type ConversationStatusResponse struct {
-	OK     bool                       `json:"ok"`
-	Status domain.ConversationStatus  `json:"status"`
+	OK     bool                      `json:"ok"`
+	Status domain.ConversationStatus `json:"status"`
 }

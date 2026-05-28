@@ -43,9 +43,9 @@ type transcriptEnvelope struct {
 }
 
 type conversationEnvelope struct {
-	OK     bool                        `json:"ok"`
-	Error  string                      `json:"error,omitempty"`
-	Status domain.ConversationStatus   `json:"status"`
+	OK     bool                      `json:"ok"`
+	Error  string                    `json:"error,omitempty"`
+	Status domain.ConversationStatus `json:"status"`
 }
 
 func (c *Client) Start(ctx context.Context) (domain.Status, error) {
