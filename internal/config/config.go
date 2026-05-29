@@ -70,7 +70,7 @@ type ContinuousConfig struct {
 
 type LocalSTTConfig struct {
 	Provider string // "whispercpp" or empty (disabled)
-	Model    string // whisper model name, e.g. "tiny.en"
+	Model    string // whisper model filename, e.g. "ggml-tiny.en.bin"
 }
 
 type TTSConfig struct {
@@ -143,7 +143,7 @@ func Load() (Config, error) {
 			FrameMs:      envOrDefaultInt("COLDMIC_VAD_FRAME_MS", 30),
 			LocalSTT: LocalSTTConfig{
 				Provider: envOrDefault("COLDMIC_LOCAL_STT", ""),
-				Model:    envOrDefault("COLDMIC_LOCAL_STT_MODEL", "tiny.en"),
+				Model:    envOrDefault("COLDMIC_LOCAL_STT_MODEL", "ggml-tiny.en.bin"),
 			},
 		},
 		TTS: TTSConfig{

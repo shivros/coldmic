@@ -210,11 +210,8 @@ func (l *ContinuousListener) Start(ctx context.Context) error {
 
 		if l.localSTT != nil {
 			// Two-phase: buffer audio locally, don't start cloud STT yet.
+			// audioBuf was already populated by the read loop with the triggering chunk.
 			debuglog.Printf("continuous listener: speech detected (two-phase), buffering session=%s", sessionID)
-			audioBuf = make([]byte, 0, l.cfg.ChunkSize*4)
-			if len(audioBuf) > 0 {
-				audioBuf = append(audioBuf, audioBuf...)
-			}
 			return
 		}
 
@@ -252,47 +249,52 @@ func (l *ContinuousListener) Start(ctx context.Context) error {
 
 		if l.localSTT != nil {
 			// Two-phase: transcribe locally first.
+			// Snapshot mutable variables before launching goroutine (fix race).
+			bufSnapshot := make([]byte, len(audioBuf))
+			copy(bufSnapshot, audioBuf)
+			sidSnapshot := sessionID
 			go func() {
-				debuglog.Printf("continuous listener: speech ended (two-phase), running local STT session=%s audio=%d bytes", sessionID, len(audioBuf))
+				debuglog.Printf("continuous listener: speech ended (two-phase), running local STT session=%s audio=%d bytes", sidSnapshot, len(bufSnapshot))
 
-				localText, err := l.localSTT.Transcribe(ctx, audioBuf)
+				localText, err := l.localSTT.Transcribe(ctx, bufSnapshot)
 				if err != nil {
 					debuglog.Printf("continuous listener: local STT failed: %v, falling back to cloud", err)
 					// Fallback: start cloud session with buffered audio.
-					l.startCloudFromBuffer(ctx, audioBuf, sessionID)
+					l.startCloudFromBuffer(ctx, bufSnapshot, sidSnapshot)
 					return
 				}
 
 				if localText == "" {
-					debuglog.Printf("continuous listener: local STT empty session=%s, discarding", sessionID)
+					debuglog.Printf("continuous listener: local STT empty session=%s, discarding", sidSnapshot)
 					l.emit(ListenerEvent{
 						Kind:      ListenerEventVADSpeechEnd,
-						SessionID: sessionID,
+						SessionID: sidSnapshot,
 						Timestamp: time.Now().UTC(),
 					})
 					l.vad.Reset()
 					return
 				}
 
-				debuglog.Printf("continuous listener: local STT transcript=%q session=%s", localText, sessionID)
+				debuglog.Printf("continuous listener: local STT transcript=%q session=%s", localText, sidSnapshot)
 
 				// Check wake phrase on local transcript.
 				if text, ok := l.matchWakePhrase(localText); ok {
-					debuglog.Printf("continuous listener: wake phrase matched (local) session=%s text=%q", sessionID, text)
-					// Start cloud session with buffered audio for high-quality transcription.
-					l.startCloudFromBuffer(ctx, audioBuf, sessionID)
+					debuglog.Printf("continuous listener: wake phrase matched (local) session=%s text=%q", sidSnapshot, text)
+					// Emit wake phrase event immediately (before cloud call).
 					l.emit(ListenerEvent{
 						Kind:      ListenerEventWakePhrase,
 						Text:      text,
-						SessionID: sessionID,
+						SessionID: sidSnapshot,
 						Timestamp: time.Now().UTC(),
 					})
+					// Start cloud session with buffered audio for high-quality transcription.
+					l.startCloudFromBuffer(ctx, bufSnapshot, sidSnapshot)
 				} else {
-					debuglog.Printf("continuous listener: no wake phrase match (local) session=%s raw=%q", sessionID, localText)
+					debuglog.Printf("continuous listener: no wake phrase match (local) session=%s raw=%q", sidSnapshot, localText)
 					// Discard — no cloud API call needed.
 					l.emit(ListenerEvent{
 						Kind:      ListenerEventVADSpeechEnd,
-						SessionID: sessionID,
+						SessionID: sidSnapshot,
 						Timestamp: time.Now().UTC(),
 					})
 				}
@@ -308,33 +310,39 @@ func (l *ContinuousListener) Start(ctx context.Context) error {
 
 		debuglog.Printf("continuous listener: speech ended, closing transcription session=%s", sessionID)
 
-		go func() {
-			_ = streamSession.CloseSend()
-			_ = waitForStream(streamSession, 4*time.Second)
-			<-eventsDone
+		// Snapshot mutable variables before launching goroutine (fix race).
+		snapStream := streamSession
+		snapAgg := aggregator
+		snapDone := eventsDone
+		sidSnapshot := sessionID
 
-			raw := aggregator.Raw()
+		go func() {
+			_ = snapStream.CloseSend()
+			_ = waitForStream(snapStream, 4*time.Second)
+			<-snapDone
+
+			raw := snapAgg.Raw()
 			if raw == "" {
-				debuglog.Printf("continuous listener: no transcript for session=%s", sessionID)
+				debuglog.Printf("continuous listener: no transcript for session=%s", sidSnapshot)
 				return
 			}
 
 			// Check wake phrase.
 			if text, ok := l.matchWakePhrase(raw); ok {
-				debuglog.Printf("continuous listener: wake phrase matched session=%s text=%q", sessionID, text)
+				debuglog.Printf("continuous listener: wake phrase matched session=%s text=%q", sidSnapshot, text)
 				l.emit(ListenerEvent{
 					Kind:      ListenerEventWakePhrase,
 					Text:      text,
-					SessionID: sessionID,
+					SessionID: sidSnapshot,
 					Timestamp: time.Now().UTC(),
 				})
 			} else {
-				debuglog.Printf("continuous listener: no wake phrase match session=%s raw=%q", sessionID, raw)
+				debuglog.Printf("continuous listener: no wake phrase match session=%s raw=%q", sidSnapshot, raw)
 			}
 
 			l.emit(ListenerEvent{
 				Kind:      ListenerEventVADSpeechEnd,
-				SessionID: sessionID,
+				SessionID: sidSnapshot,
 				Timestamp: time.Now().UTC(),
 			})
 
@@ -459,8 +467,8 @@ func (l *ContinuousListener) matchWakePhrase(text string) (string, bool) {
 }
 
 // startCloudFromBuffer starts a cloud streaming session and replays buffered
-// audio. Used in two-phase mode after local STT detects a wake phrase.
-// Runs synchronously — caller should invoke from a goroutine.
+// audio, consuming the transcription result. Used in two-phase mode after local
+// STT detects a wake phrase. Runs synchronously — caller should invoke from a goroutine.
 func (l *ContinuousListener) startCloudFromBuffer(ctx context.Context, audioData []byte, sessionID string) {
 	stream, err := l.provider.StartStreaming(ctx, l.cfg.Streaming)
 	if err != nil {
@@ -470,8 +478,26 @@ func (l *ContinuousListener) startCloudFromBuffer(ctx context.Context, audioData
 	}
 	defer stream.Close()
 
+	aggregator := newTranscriptAggregator()
+	eventsDone := make(chan struct{})
+	go consumeTranscriptionEvents(stream, aggregator, l.events, eventsDone)
+
 	debuglog.Printf("continuous listener: cloud session started session=%s, replaying %d bytes", sessionID, len(audioData))
 	_ = stream.SendAudio(audioData)
 	_ = stream.CloseSend()
 	_ = waitForStream(stream, 4*time.Second)
+	<-eventsDone
+
+	raw := aggregator.Raw()
+	if raw != "" {
+		debuglog.Printf("continuous listener: cloud transcript session=%s text=%q", sessionID, raw)
+	} else {
+		debuglog.Printf("continuous listener: cloud transcript empty session=%s", sessionID)
+	}
+
+	l.emit(ListenerEvent{
+		Kind:      ListenerEventVADSpeechEnd,
+		SessionID: sessionID,
+		Timestamp: time.Now().UTC(),
+	})
 }

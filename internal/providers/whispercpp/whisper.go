@@ -49,6 +49,13 @@ func NewProvider(cfg Config) *Provider {
 	if model == "" {
 		model = defaultModel
 	}
+	// Normalize short model names (e.g. "tiny.en" → "ggml-tiny.en.bin").
+	if !strings.HasPrefix(model, "ggml-") {
+		model = "ggml-" + model
+	}
+	if !strings.HasSuffix(model, ".bin") {
+		model = model + ".bin"
+	}
 
 	// Determine binary name per platform.
 	binName := "whisper-cli"
