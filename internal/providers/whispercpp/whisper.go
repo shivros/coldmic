@@ -18,9 +18,6 @@ import (
 )
 
 const (
-	// whisperVersion is the whisper.cpp release version to download.
-	whisperVersion = "v1.8.3"
-
 	// modelBaseURL is the HuggingFace repository for ggml whisper models.
 	modelBaseURL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
 

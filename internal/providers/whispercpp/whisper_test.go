@@ -10,13 +10,6 @@ import (
 	"time"
 )
 
-// fakeWhisperScript is a shell script that mimics whisper-cli output.
-const fakeWhisperScript = `#!/bin/sh
-cat
-echo ""
-echo "Hello Alice."
-`
-
 func TestPCMToWAV(t *testing.T) {
 	pcm := make([]byte, 3200) // 100ms of 16kHz mono 16-bit
 	wav, err := pcmToWAV(pcm, 16000, 1)
