@@ -2,6 +2,8 @@ package whispercpp
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -194,5 +196,176 @@ func TestInitBinaryNotFound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not found") {
 		t.Errorf("error = %v, want 'not found'", err)
+	}
+}
+
+func TestNewProviderModelNormalization(t *testing.T) {
+	tests := []struct {
+		name      string
+		model     string
+		wantModel string
+	}{
+		{"default", "", "ggml-tiny.en.bin"},
+		{"short name", "tiny.en", "ggml-tiny.en.bin"},
+		{"full name", "ggml-tiny.en.bin", "ggml-tiny.en.bin"},
+		{"missing prefix", "base.en.bin", "ggml-base.en.bin"},
+		{"missing suffix", "ggml-tiny.en", "ggml-tiny.en.bin"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewProvider(Config{CacheDir: "/tmp", Model: tt.model})
+			if p.modelName != tt.wantModel {
+				t.Errorf("modelName = %q, want %q", p.modelName, tt.wantModel)
+			}
+		})
+	}
+}
+
+func TestNewProviderBinaryName(t *testing.T) {
+	p := NewProvider(Config{CacheDir: "/tmp"})
+	expected := "whisper-cli"
+	if runtime.GOOS == "windows" {
+		expected = "whisper-cli.exe"
+	}
+	if p.binaryName != expected {
+		t.Errorf("binaryName = %q, want %q", p.binaryName, expected)
+	}
+}
+
+func TestNewProviderCustomBinaryPath(t *testing.T) {
+	p := NewProvider(Config{CacheDir: "/tmp", BinaryPath: "/custom/path"})
+	if p.binaryPath != "/custom/path" {
+		t.Errorf("binaryPath = %q, want %q", p.binaryPath, "/custom/path")
+	}
+}
+
+func TestInitSuccess(t *testing.T) {
+	tmpDir := t.TempDir()
+	binPath := filepath.Join(tmpDir, "whisper-cli")
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	modelPath := filepath.Join(tmpDir, "ggml-tiny.en.bin")
+	if err := os.WriteFile(modelPath, []byte("fake model data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := NewProvider(Config{CacheDir: tmpDir, BinaryPath: binPath})
+	if err := p.Init(); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+}
+
+func TestInitCreatesCacheDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "new-cache")
+	binPath := filepath.Join(tmpDir, "whisper-cli")
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	modelPath := filepath.Join(cacheDir, "ggml-tiny.en.bin")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(modelPath, []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p := NewProvider(Config{CacheDir: cacheDir, BinaryPath: binPath})
+	if err := p.Init(); err != nil {
+		t.Fatalf("Init with new cache dir: %v", err)
+	}
+}
+
+func TestDownloadFileSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("fake model content"))
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "model.bin")
+	if err := downloadFile(path, srv.URL+"/model.bin"); err != nil {
+		t.Fatalf("downloadFile: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "fake model content" {
+		t.Errorf("content = %q, want %q", data, "fake model content")
+	}
+}
+
+func TestDownloadFileHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "model.bin")
+	err := downloadFile(path, srv.URL+"/model.bin")
+	if err == nil {
+		t.Fatal("expected error for 404")
+	}
+}
+
+func TestDownloadFileBadURL(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "model.bin")
+	err := downloadFile(path, "http://localhost:1/bad")
+	if err == nil {
+		t.Fatal("expected error for bad URL")
+	}
+}
+
+func TestTranscribeBinaryError(t *testing.T) {
+	tmpDir := t.TempDir()
+	binPath := filepath.Join(tmpDir, "whisper-cli")
+	script := "#!/bin/sh\nexit 1\n"
+	if err := os.WriteFile(binPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	p := &Provider{
+		cacheDir:   tmpDir,
+		modelName:  "ggml-tiny.en.bin",
+		binaryPath: binPath,
+	}
+
+	_, err := p.Transcribe(context.Background(), make([]byte, 3200))
+	if err == nil {
+		t.Fatal("expected error from failing binary")
+	}
+}
+
+func TestPCMToWAVStereo(t *testing.T) {
+	pcm := make([]byte, 6400) // 100ms of 16kHz stereo 16-bit
+	wav, err := pcmToWAV(pcm, 16000, 2)
+	if err != nil {
+		t.Fatalf("pcmToWAV stereo: %v", err)
+	}
+	if string(wav[:4]) != "RIFF" {
+		t.Errorf("expected RIFF header")
+	}
+	channels := uint16(wav[22]) | uint16(wav[23])<<8
+	if channels != 2 {
+		t.Errorf("channels = %d, want 2", channels)
+	}
+}
+
+func TestInitMkdirError(t *testing.T) {
+	tmpDir := t.TempDir()
+	blocker := filepath.Join(tmpDir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cacheDir := filepath.Join(blocker, "subdir")
+
+	p := NewProvider(Config{CacheDir: cacheDir, BinaryPath: "/usr/bin/true"})
+	err := p.Init()
+	if err == nil {
+		t.Fatal("expected mkdir error")
 	}
 }
