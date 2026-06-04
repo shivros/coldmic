@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 
 	"coldmic/internal/debuglog"
 )
@@ -129,9 +128,9 @@ func (p *Provider) Transcribe(ctx context.Context, audioPCM []byte) (string, err
 	cmd.Stdin = bytes.NewReader(wavData)
 	// Kill the entire process group on context cancellation.
 	// Without this, child processes (e.g., sleep inside a shell script) survive.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	configureProcessGroup(cmd)
 	cmd.Cancel = func() error {
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		return killProcessGroup(cmd)
 	}
 
 	var stdout, stderr bytes.Buffer
