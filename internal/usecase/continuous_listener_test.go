@@ -44,7 +44,7 @@ func TestContinuousListenerStartStop(t *testing.T) {
 		ChunkSize: 4096,
 	}
 
-	listener := NewContinuousListener(audioCap, vad, provider, events, cfg)
+	listener := NewContinuousListener(audioCap, vad, provider, nil, events, cfg)
 
 	err := listener.Start(context.Background())
 	if err != nil {
@@ -81,7 +81,7 @@ func TestContinuousListenerCtxCancel(t *testing.T) {
 		ChunkSize:    4096,
 	}
 
-	listener := NewContinuousListener(audioCap, vad, provider, events, cfg)
+	listener := NewContinuousListener(audioCap, vad, provider, nil, events, cfg)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
@@ -135,7 +135,7 @@ func TestContinuousListenerCannotStartTwice(t *testing.T) {
 		ChunkSize:    4096,
 	}
 
-	listener := NewContinuousListener(audioCap, vad, provider, events, cfg)
+	listener := NewContinuousListener(audioCap, vad, provider, nil, events, cfg)
 
 	ctx1, cancel1 := context.WithCancel(context.Background())
 	defer cancel1()
@@ -163,7 +163,7 @@ func TestContinuousListenerWakePhraseMatching(t *testing.T) {
 		WakePhrases: []string{"hey alice", "alice"},
 	}
 	events := &fakeEventSink{}
-	listener := NewContinuousListener(nil, nil, nil, events, cfg)
+	listener := NewContinuousListener(nil, nil, nil, nil, events, cfg)
 
 	text, ok := listener.matchWakePhrase("Hey Alice, what's the weather?")
 	if !ok {
@@ -194,7 +194,7 @@ func TestContinuousListenerWakePhraseEmptyPhrases(t *testing.T) {
 		WakePhrases: []string{},
 	}
 	events := &fakeEventSink{}
-	listener := NewContinuousListener(nil, nil, nil, events, cfg)
+	listener := NewContinuousListener(nil, nil, nil, nil, events, cfg)
 
 	_, ok := listener.matchWakePhrase("Hey Alice, what's the weather?")
 	if ok {
@@ -209,7 +209,7 @@ func TestContinuousListenerEventsReturnsChannel(t *testing.T) {
 		WakePhrases: []string{"hey alice"},
 	}
 	events := &fakeEventSink{}
-	listener := NewContinuousListener(nil, nil, nil, events, cfg)
+	listener := NewContinuousListener(nil, nil, nil, nil, events, cfg)
 
 	ch := listener.Events()
 	if ch == nil {
@@ -229,7 +229,7 @@ func TestContinuousListenerEmitSendsToChannel(t *testing.T) {
 		WakePhrases: []string{"hey alice"},
 	}
 	events := &fakeEventSink{}
-	listener := NewContinuousListener(nil, nil, nil, events, cfg)
+	listener := NewContinuousListener(nil, nil, nil, nil, events, cfg)
 
 	evt := ListenerEvent{
 		Kind:      ListenerEventWakePhrase,
@@ -255,7 +255,7 @@ func TestContinuousListenerEmitDropsWhenFull(t *testing.T) {
 		WakePhrases: []string{"hey alice"},
 	}
 	events := &fakeEventSink{}
-	listener := NewContinuousListener(nil, nil, nil, events, cfg)
+	listener := NewContinuousListener(nil, nil, nil, nil, events, cfg)
 
 	// Fill the channel (capacity is 32).
 	for i := 0; i < 32; i++ {

@@ -65,6 +65,12 @@ type ContinuousConfig struct {
 	VADThreshold float64 // Used by EnergyVAD (RMS threshold) and SileroVAD (speech probability threshold)
 	SilenceMs    int
 	FrameMs      int
+	LocalSTT     LocalSTTConfig
+}
+
+type LocalSTTConfig struct {
+	Provider string // "whispercpp" or empty (disabled)
+	Model    string // whisper model filename, e.g. "ggml-tiny.en.bin"
 }
 
 type TTSConfig struct {
@@ -135,6 +141,10 @@ func Load() (Config, error) {
 			VADThreshold: envOrDefaultFloat("COLDMIC_VAD_THRESHOLD", 500),
 			SilenceMs:    envOrDefaultInt("COLDMIC_VAD_SILENCE_MS", 800),
 			FrameMs:      envOrDefaultInt("COLDMIC_VAD_FRAME_MS", 30),
+			LocalSTT: LocalSTTConfig{
+				Provider: envOrDefault("COLDMIC_LOCAL_STT", ""),
+				Model:    envOrDefault("COLDMIC_LOCAL_STT_MODEL", "ggml-tiny.en.bin"),
+			},
 		},
 		TTS: TTSConfig{
 			Engine:      envOrDefault("COLDMIC_TTS_ENGINE", "edge-tts"),
