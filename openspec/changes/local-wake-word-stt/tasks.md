@@ -43,4 +43,4 @@
 - [x] `gofmt` applied to all changed files
 - [ ] Integration test: local STT enabled → wake phrase detected locally → cloud session starts
 - [ ] Integration test: local STT disabled → existing Deepgram-only behavior unchanged
-- [ ] Verify `make ci` passes (coverage gate — may need additional test coverage)
+- [x] Verify `make ci` passes (coverage gate — may need additional test coverage)
