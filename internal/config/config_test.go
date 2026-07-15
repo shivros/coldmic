@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -94,7 +95,138 @@ func TestLoadRespectsOverridesAndFallbacks(t *testing.T) {
 	}
 }
 
-func TestLoadInvalidNumericValuesFallback(t *testing.T) {
+func TestLoadConfigFileAndEnvPrecedence(t *testing.T) {
+	home := t.TempDir()
+	configPath := filepath.Join(home, ".config", "coldmic", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	data := []byte(`
+deepgram:
+  model: nova-file
+  smart_format: false
+audio:
+  input_device: file-mic
+  sample_rate: 44100
+session:
+  streaming_grace: "250ms"
+conversation:
+  timeout: "45s"
+  stop_phrases: ["enough", "stop now"]
+continuous:
+  wake_phrases: ["hey computer"]
+  vad_engine: energy
+  vad_threshold: 350
+tts:
+  voice: "en-US-JennyNeural"
+daemon:
+  url: "http://127.0.0.1:5555"
+  toggle_compat: true
+  debug: true
+`)
+	if err := os.WriteFile(configPath, data, 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+
+	t.Setenv("HOME", home)
+	t.Setenv("DEEPGRAM_MODEL", "nova-env")
+	t.Setenv("COLDMIC_AUDIO_INPUT_DEVICE", "env-mic")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+	if cfg.Deepgram.Model != "nova-env" {
+		t.Fatalf("expected env to override file model, got %q", cfg.Deepgram.Model)
+	}
+	if cfg.Audio.InputDevice != "env-mic" {
+		t.Fatalf("expected env to override file input device, got %q", cfg.Audio.InputDevice)
+	}
+	if cfg.Audio.SampleRate != 44100 || cfg.Session.StreamingGrace != 250*time.Millisecond {
+		t.Fatalf("expected file config values, got audio=%+v session=%+v", cfg.Audio, cfg.Session)
+	}
+	if cfg.Conversation.Timeout != 45*time.Second || cfg.Conversation.StopPhrases[0] != "enough" {
+		t.Fatalf("expected conversation values from file, got %+v", cfg.Conversation)
+	}
+	if cfg.Continuous.VADEngine != "energy" || cfg.Continuous.WakePhrases[0] != "hey computer" {
+		t.Fatalf("expected continuous values from file, got %+v", cfg.Continuous)
+	}
+	if cfg.Daemon.URL != "http://127.0.0.1:5555" || !cfg.Daemon.ToggleCompat || !cfg.Daemon.Debug {
+		t.Fatalf("expected daemon values from file, got %+v", cfg.Daemon)
+	}
+}
+
+func TestLoadInvalidConfigFileReturnsHumanReadableError(t *testing.T) {
+	home := t.TempDir()
+	configPath := filepath.Join(home, ".config", "coldmic", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	if err := os.WriteFile(configPath, []byte("conversation:\n  timeout: soon\n"), 0o600); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	t.Setenv("HOME", home)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatalf("expected invalid config error")
+	}
+	if !strings.Contains(err.Error(), "conversation.timeout") {
+		t.Fatalf("expected field-specific error, got %v", err)
+	}
+}
+
+func TestLoadUnknownConfigFieldReturnsHumanReadableError(t *testing.T) {
+	home := t.TempDir()
+	configPath := filepath.Join(home, ".config", "coldmic", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	if err := os.WriteFile(configPath, []byte("audio:\n  sample_rte: 16000\n"), 0o600); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	t.Setenv("HOME", home)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatalf("expected unknown field error")
+	}
+	if !strings.Contains(err.Error(), "sample_rte") {
+		t.Fatalf("expected unknown field name in error, got %v", err)
+	}
+}
+
+func TestLoadExplicitMissingConfigFileReturnsError(t *testing.T) {
+	home := t.TempDir()
+	missing := filepath.Join(home, "missing.yaml")
+	t.Setenv("HOME", home)
+	t.Setenv("COLDMIC_CONFIG_FILE", missing)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatalf("expected missing explicit config file error")
+	}
+	if !strings.Contains(err.Error(), missing) {
+		t.Fatalf("expected missing path in error, got %v", err)
+	}
+}
+
+func TestWriteTemplateCreatesDefaultConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path, err := DefaultPath()
+	if err != nil {
+		t.Fatalf("default path failed: %v", err)
+	}
+	if err := WriteTemplate(""); err != nil {
+		t.Fatalf("write template failed: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected template at %s: %v", path, err)
+	}
+}
+
+func TestLoadInvalidEnvValuesReturnHumanReadableError(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("COLDMIC_SAMPLE_RATE", "bad")
 	t.Setenv("COLDMIC_CHANNELS", "-1")
@@ -103,28 +235,14 @@ func TestLoadInvalidNumericValuesFallback(t *testing.T) {
 	t.Setenv("COLDMIC_STREAMING_GRACE_MS", "bad")
 	t.Setenv("DEEPGRAM_SMART_FORMAT", "not-bool")
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("load failed: %v", err)
+	_, err := Load()
+	if err == nil {
+		t.Fatalf("expected invalid environment config error")
 	}
-
-	if cfg.Audio.SampleRate != 16000 {
-		t.Fatalf("expected default sample rate, got %d", cfg.Audio.SampleRate)
-	}
-	if cfg.Audio.Channels != 1 {
-		t.Fatalf("expected default channels, got %d", cfg.Audio.Channels)
-	}
-	if cfg.Rules.IterationLimit != 30 {
-		t.Fatalf("expected default iteration limit, got %d", cfg.Rules.IterationLimit)
-	}
-	if cfg.Session.ChunkSize != 4096 {
-		t.Fatalf("expected chunk size fallback, got %d", cfg.Session.ChunkSize)
-	}
-	if cfg.Session.StreamingGrace != time.Second {
-		t.Fatalf("expected default grace, got %s", cfg.Session.StreamingGrace)
-	}
-	if !cfg.Deepgram.SmartFormat {
-		t.Fatalf("expected default smart format true")
+	for _, want := range []string{"COLDMIC_SAMPLE_RATE", "COLDMIC_CHANNELS", "COLDMIC_RULE_ITERATION_LIMIT", "COLDMIC_AUDIO_CHUNK_SIZE", "COLDMIC_STREAMING_GRACE_MS", "DEEPGRAM_SMART_FORMAT"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected %s in error, got %v", want, err)
+		}
 	}
 }
 
@@ -189,20 +307,14 @@ func TestLoadContinuousConfigInvalidValues(t *testing.T) {
 	t.Setenv("COLDMIC_VAD_SILENCE_MS", "bad")
 	t.Setenv("COLDMIC_VAD_FRAME_MS", "bad")
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("load failed: %v", err)
+	_, err := Load()
+	if err == nil {
+		t.Fatalf("expected invalid environment config error")
 	}
-
-	// Should fall back to defaults for invalid values.
-	if cfg.Continuous.VADThreshold != 500 {
-		t.Fatalf("expected default VADThreshold for bad input, got %v", cfg.Continuous.VADThreshold)
-	}
-	if cfg.Continuous.SilenceMs != 800 {
-		t.Fatalf("expected default SilenceMs for bad input, got %d", cfg.Continuous.SilenceMs)
-	}
-	if cfg.Continuous.FrameMs != 30 {
-		t.Fatalf("expected default FrameMs for bad input, got %d", cfg.Continuous.FrameMs)
+	for _, want := range []string{"COLDMIC_VAD_THRESHOLD", "COLDMIC_VAD_SILENCE_MS", "COLDMIC_VAD_FRAME_MS"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected %s in error, got %v", want, err)
+		}
 	}
 }
 
@@ -237,7 +349,7 @@ func TestLoadConversationConfigDefaults(t *testing.T) {
 		t.Fatalf("expected default provider openai, got %q", cfg.Conversation.Provider)
 	}
 	if cfg.Conversation.MaxHistory != 20 {
-		t.Fatalf("expected default MaxHistory=20, got %d", cfg.Conversation.MaxHistory)
+		t.Fatalf("expected MaxHistory=20, got %d", cfg.Conversation.MaxHistory)
 	}
 }
 
@@ -259,12 +371,11 @@ func TestEnvOrDefaultDurationInvalid(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("COLDMIC_CONVERSATION_TIMEOUT", "not-a-duration")
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("load failed: %v", err)
+	_, err := Load()
+	if err == nil {
+		t.Fatalf("expected invalid environment config error")
 	}
-
-	if cfg.Conversation.SilenceTimeout != 30*time.Second {
-		t.Fatalf("expected default 30s timeout for bad input, got %v", cfg.Conversation.SilenceTimeout)
+	if !strings.Contains(err.Error(), "COLDMIC_CONVERSATION_TIMEOUT") {
+		t.Fatalf("expected timeout env key in error, got %v", err)
 	}
 }

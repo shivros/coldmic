@@ -11,6 +11,7 @@ import (
 	"time"
 
 	coldcli "coldmic/internal/cli"
+	"coldmic/internal/config"
 	"coldmic/internal/domain"
 )
 
@@ -43,11 +44,22 @@ type configProvider interface {
 type envConfigProvider struct{}
 
 func (envConfigProvider) DaemonURL() string {
-	return envOrDefault("COLDMIC_DAEMON_URL", "http://127.0.0.1:4317")
+	cfg, err := config.Load()
+	if err != nil {
+		return envOrDefault("COLDMIC_DAEMON_URL", "http://127.0.0.1:4317")
+	}
+	if cfg.Daemon.URL == "" {
+		return "http://127.0.0.1:4317"
+	}
+	return cfg.Daemon.URL
 }
 
 func (envConfigProvider) ToggleCompatEnabled() bool {
-	return toggleCompatFromEnv("COLDMIC_TOGGLE_COMPAT")
+	cfg, err := config.Load()
+	if err != nil {
+		return toggleCompatFromEnv("COLDMIC_TOGGLE_COMPAT")
+	}
+	return cfg.Daemon.ToggleCompat
 }
 
 type commandSpec struct {
@@ -100,6 +112,7 @@ func (r *CommandRunner) registerCommands() {
 	r.register("status", "Show current recording state", r.runStatus)
 	r.register("transcript", "Show latest final transcript", r.runTranscript)
 	r.register("conversation", "Conversation mode commands", r.runConversation)
+	r.register("config", "Configuration file commands", r.runConfig)
 	r.register("help", "Show this help text", r.runHelp)
 	r.commands["-h"] = r.commands["help"]
 	r.commands["--help"] = r.commands["help"]
@@ -108,6 +121,14 @@ func (r *CommandRunner) registerCommands() {
 func (r *CommandRunner) register(name string, summary string, handler func(args []string) (int, error)) {
 	r.commands[name] = commandSpec{name: name, summary: summary, handler: handler}
 	r.commandOrder = append(r.commandOrder, name)
+}
+
+func (r *CommandRunner) validateConfigProvider() error {
+	if _, ok := r.config.(envConfigProvider); !ok {
+		return nil
+	}
+	_, err := config.Load()
+	return err
 }
 
 func (r *CommandRunner) Run(cmd string, args []string) (int, error) {
@@ -120,6 +141,9 @@ func (r *CommandRunner) Run(cmd string, args []string) (int, error) {
 }
 
 func (r *CommandRunner) RunNoCommand() (int, error) {
+	if err := r.validateConfigProvider(); err != nil {
+		return exitGeneric, err
+	}
 	if !r.config.ToggleCompatEnabled() {
 		r.printUsage()
 		return exitGeneric, fmt.Errorf("missing command")
@@ -349,6 +373,62 @@ func (r *CommandRunner) runConversationStatus(args []string) (int, error) {
 	return exitOK, nil
 }
 
+func (r *CommandRunner) runConfig(args []string) (int, error) {
+	if len(args) == 0 {
+		fmt.Fprintln(r.stderr, "Usage: coldmic config <init|show> [flags]")
+		return exitGeneric, fmt.Errorf("missing config subcommand")
+	}
+
+	switch args[0] {
+	case "init":
+		fs := flag.NewFlagSet("config init", flag.ContinueOnError)
+		fs.SetOutput(r.stderr)
+		path := ""
+		fs.StringVar(&path, "path", "", "config file path (default: ~/.config/coldmic/config.yaml)")
+		if err := fs.Parse(args[1:]); err != nil {
+			return exitGeneric, err
+		}
+		if path == "" {
+			defaultPath, err := config.DefaultPath()
+			if err != nil {
+				return exitGeneric, err
+			}
+			path = defaultPath
+		}
+		if err := config.WriteTemplate(path); err != nil {
+			return exitGeneric, err
+		}
+		fmt.Fprintf(r.stdout, "Wrote config template to %s\n", path)
+		return exitOK, nil
+	case "show":
+		fs := flag.NewFlagSet("config show", flag.ContinueOnError)
+		fs.SetOutput(r.stderr)
+		outputJSON := false
+		fs.BoolVar(&outputJSON, "json", false, "emit JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			return exitGeneric, err
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return exitGeneric, err
+		}
+		cfg = config.RedactSecrets(cfg)
+		if outputJSON {
+			writeJSON(r.stdout, cfg)
+			return exitOK, nil
+		}
+		data, err := config.MarshalYAML(cfg)
+		if err != nil {
+			return exitGeneric, err
+		}
+		_, _ = r.stdout.Write(data)
+		return exitOK, nil
+	default:
+		fmt.Fprintln(r.stderr, "Usage: coldmic config <init|show> [flags]")
+		return exitGeneric, fmt.Errorf("unknown config subcommand: %s", args[0])
+	}
+}
+
 type commonFlags struct {
 	daemonURL  string
 	outputJSON bool
@@ -364,6 +444,9 @@ func parseCommonFlags(name string, args []string) (*commonFlags, error) {
 }
 
 func (r *CommandRunner) parseCommonFlags(name string, args []string) (*commonFlags, error) {
+	if err := r.validateConfigProvider(); err != nil {
+		return nil, err
+	}
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(r.stderr)
 
@@ -377,6 +460,9 @@ func (r *CommandRunner) parseCommonFlags(name string, args []string) (*commonFla
 }
 
 func (r *CommandRunner) parseStatusFlags(args []string) (*statusFlags, error) {
+	if err := r.validateConfigProvider(); err != nil {
+		return nil, err
+	}
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	fs.SetOutput(r.stderr)
 
@@ -421,6 +507,10 @@ func (r *CommandRunner) printUsage() {
 	fmt.Fprintln(r.stdout, "  conversation start   Start voice assistant conversation mode")
 	fmt.Fprintln(r.stdout, "  conversation stop    Stop active conversation")
 	fmt.Fprintln(r.stdout, "  conversation status  Show conversation state")
+	fmt.Fprintln(r.stdout, "")
+	fmt.Fprintln(r.stdout, "Config subcommands:")
+	fmt.Fprintln(r.stdout, "  config init          Write ~/.config/coldmic/config.yaml template")
+	fmt.Fprintln(r.stdout, "  config show          Show resolved config after file/env overrides")
 	fmt.Fprintln(r.stdout, "")
 	fmt.Fprintln(r.stdout, "Global flags per command:")
 	fmt.Fprintln(r.stdout, "  --daemon-url URL  Daemon URL (default: COLDMIC_DAEMON_URL or http://127.0.0.1:4317)")

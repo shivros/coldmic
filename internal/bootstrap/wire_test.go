@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"coldmic/internal/domain"
@@ -85,11 +86,11 @@ func TestBuildWithUnknownVADEngine(t *testing.T) {
 	t.Setenv("DEEPGRAM_API_KEY", "test-key")
 	t.Setenv("COLDMIC_VAD_ENGINE", "nonexistent-vad")
 
-	services, err := Build(noopEventSink{}, noopClipboard{})
-	if err != nil {
-		t.Fatalf("build should succeed with unknown VAD engine (falls back): %v", err)
+	_, err := Build(noopEventSink{}, noopClipboard{})
+	if err == nil {
+		t.Fatalf("expected build to reject unknown VAD engine")
 	}
-	if services.Controller == nil {
-		t.Fatalf("expected controller")
+	if !strings.Contains(err.Error(), "COLDMIC_VAD_ENGINE") {
+		t.Fatalf("expected VAD env key in error, got %v", err)
 	}
 }
