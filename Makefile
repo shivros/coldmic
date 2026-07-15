@@ -5,6 +5,8 @@ WAILS_VERSION ?= v2.11.0
 WAILS_CLI ?= go run github.com/wailsapp/wails/v2/cmd/wails@$(WAILS_VERSION)
 WAILS_BUILD_ARGS ?=
 CLI_EXE_SUFFIX ?=
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+GO_LDFLAGS ?= -X coldmic/internal/version.Version=$(VERSION)
 GO_COVERAGE_MIN ?= 74
 FRONTEND_COVERAGE_LINES_MIN ?= 85
 FRONTEND_COVERAGE_STATEMENTS_MIN ?= 85
@@ -33,8 +35,8 @@ build-app-ci-linux: build-app-ci
 
 build-cli:
 	mkdir -p build/bin
-	go build -o build/bin/coldmic$(CLI_EXE_SUFFIX) ./cmd/coldmic
-	go build -o build/bin/coldmicd$(CLI_EXE_SUFFIX) ./cmd/coldmicd
+	go build -ldflags "$(GO_LDFLAGS)" -o build/bin/coldmic$(CLI_EXE_SUFFIX) ./cmd/coldmic
+	go build -ldflags "$(GO_LDFLAGS)" -o build/bin/coldmicd$(CLI_EXE_SUFFIX) ./cmd/coldmicd
 
 install-cli:
 	go install ./cmd/coldmic

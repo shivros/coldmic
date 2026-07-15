@@ -1,315 +1,253 @@
-# ColdMic (Tracer Bullet)
+# ColdMic
 
-ColdMic is a Wails + Go desktop app for intentional push-to-talk transcription.
+ColdMic is a desktop application for push-to-talk speech transcription and voice assistant interaction. Built with Go and Wails, it captures audio from your microphone, transcribes it in real time via Deepgram streaming, and copies the final transcript to your clipboard.
 
-This tracer-bullet implementation provides an end-to-end path:
+## Features
 
-- hold-to-talk recording
-- Deepgram low-latency streaming transcription
-- live partial transcript updates
-- deterministic substitution rules
-- final transcript copied to clipboard
+- **Push-to-talk transcription** — hold to record, release to transcribe
+- **Real-time streaming** — live partial transcripts via Deepgram nova-2
+- **Substitution rules** — deterministic text replacements (literals and regex)
+- **Headless daemon** — run without a GUI, control via CLI or HTTP API
+- **Voice assistant mode** — VAD-gated continuous listening with wake phrase detection, OpenAI-compatible backend for conversation, and text-to-speech playback
+- **Local wake-word detection** — optional whisper.cpp integration to avoid Deepgram costs until a wake phrase is detected
+- **YAML configuration** — config file with environment variable overrides
 
-## Current Scope
+## Architecture
 
-This is the initial functional slice, not the full product.
+ColdMic uses a clean ports-and-providers architecture:
 
-- provider: Deepgram websocket streaming
-- recorder: `ffmpeg` microphone capture adapter (currently configured for Linux PulseAudio defaults)
-- frontend: in-app hold button and `Space` key hold behavior
+```
+internal/
+├── ports/          # Interfaces (AudioCapture, TranscriptionProvider, LocalSTT, RulesEngine, Clipboard, etc.)
+├── providers/      # Interface implementations (deepgram/, openai/, edge_tts/, whispercpp/)
+├── usecase/        # Business logic (SessionService, Controller, ConversationController, ContinuousListener)
+├── domain/         # Types, errors, state enums
+├── audio/          # Audio capture adapters + Silero VAD wrapper
+├── rules/          # Substitution rules engine
+├── daemon/         # HTTP API
+├── bootstrap/      # Dependency wiring
+├── cli/            # CLI client
+├── config/         # Configuration loading (YAML + env)
+└── debuglog/       # Structured logging
+```
+
+New providers implement an interface and register in bootstrap — zero core changes required.
 
 ## Prerequisites
 
-- Go 1.23+
-- Node/npm
-- `ffmpeg` available in PATH
-- Deepgram API key
-- `lefthook` (for tracked git hooks; see https://lefthook.dev/installation/)
-- `gitleaks` (for staged secret scanning; see https://github.com/gitleaks/gitleaks?tab=readme-ov-file#installing)
+- **Go** 1.23+
+- **Node.js** / npm (for the Wails frontend)
+- **ffmpeg** in PATH (audio capture)
+- **Deepgram API key** (for transcription)
+- `lefthook` (git hooks; see [installation](https://lefthook.dev/installation/))
+- `gitleaks` (secret scanning; see [installation](https://github.com/gitleaks/gitleaks#installing))
 
-## Configuration
+## Quick Start
 
-ColdMIC loads configuration in this precedence order:
-
-1. CLI flags (where a command exposes them, such as `--daemon-url`)
-2. Environment variables
-3. `~/.config/coldmic/config.yaml`
-4. Built-in defaults
-
-Create a documented YAML template:
+### Build
 
 ```bash
-go run ./cmd/coldmic config init
-```
-
-Inspect the resolved config after YAML and environment overrides. Secret values are redacted
-in command output:
-
-```bash
-go run ./cmd/coldmic config show
-# or machine-readable output
-go run ./cmd/coldmic config show --json
-```
-
-Existing `.envrc`-style setup still works: every previous environment variable
-continues to override the YAML file. Set `COLDMIC_CONFIG_FILE` to load a config
-from a non-default path.
-
-Primary environment variables:
-
-- `DEEPGRAM_API_KEY` (required)
-- `DEEPGRAM_API_BASE` (default: `https://api.deepgram.com/v1`)
-- `DEEPGRAM_MODEL` (default: `nova-2`)
-- `DEEPGRAM_LANGUAGE` (optional)
-- `DEEPGRAM_SMART_FORMAT` (default: `true`)
-- `COLDMIC_AUDIO_INPUT_FORMAT` (default: `pulse`)
-- `COLDMIC_AUDIO_INPUT_DEVICE` (default: `default`)
-- `COLDMIC_FFMPEG_COMMAND` (default: `ffmpeg`)
-- `COLDMIC_RULES_FILE` (optional custom substitutions path)
-- `COLDMIC_DEBUG` (optional, enables verbose daemon telemetry when `true`/`1`)
-- `COLDMIC_DAEMON_ADDR` (daemon bind address, default: `127.0.0.1:4317`)
-- `COLDMIC_DAEMON_URL` (CLI daemon URL, default: `http://127.0.0.1:4317`)
-
-Conversation mode:
-
-- `COLDMIC_CONVERSATION_BACKEND` (default: `openai`)
-- `COLDMIC_BACKEND_BASE_URL` (default: `https://api.openai.com/v1`)
-- `COLDMIC_BACKEND_API_KEY` (required for conversation mode)
-- `COLDMIC_BACKEND_MODEL` (default: `gpt-4o`)
-- `COLDMIC_BACKEND_SYSTEM_PROMPT` (default: `You are a helpful voice assistant.`)
-- `COLDMIC_BACKEND_STREAM` (default: `true`)
-- `COLDMIC_BACKEND_TIMEOUT` (default: `30s`)
-- `COLDMIC_BACKEND_MAX_HISTORY` (default: `20`)
-- `COLDMIC_STOP_PHRASES` (comma-separated, default: `thanks alice,that's all,goodbye,bye alice,stop`)
-- `COLDMIC_CONVERSATION_TIMEOUT` (silence timeout, default: `30s`)
-- `COLDMIC_WAKE_PHRASES` (comma-separated, default: `hey alice,alice`)
-- `COLDMIC_TTS_ENGINE` (default: `edge-tts`)
-- `COLDMIC_TTS_VOICE` (default: `en-US-AriaNeural`)
-- `COLDMIC_TTS_RATE` (default: `+0%`)
-- `COLDMIC_TTS_VOLUME` (default: `+0%`)
-- `COLDMIC_TTS_PLAYBACK_CMD` (default: `ffplay`)
-
-Rules-file fallback order:
-
-1. `COLDMIC_RULES_FILE`
-2. `~/.config/coldmic/substitutions.rules`
-3. `~/.config/hypr/whisper-substitutions.rules`
-
-## Rules Format
-
-Rules support two line types:
-
-- literal replacement: `FROM => TO`
-- regex replacement: `s/regex/replacement/flags`
-
-Case-insensitive matching is enabled by default for regex rules unless explicitly set.
-
-## Development
-
-Before your first commit in a fresh clone, install the tracked git hooks:
-
-```bash
-make install-hooks
-```
-
-Then verify the hook blocks a generated test key:
-
-```bash
-make verify-hooks
-```
-
-This enables staged secret scanning via `gitleaks protect --staged` on every commit.
-
-```bash
-make dev
-```
-
-## CLI + Daemon
-
-Run the local daemon (headless, no UI):
-
-```bash
-go run ./cmd/coldmicd --addr 127.0.0.1:4317
-```
-
-Control ColdMic from CLI:
-
-```bash
-go run ./cmd/coldmic start
-go run ./cmd/coldmic status
-go run ./cmd/coldmic stop
-go run ./cmd/coldmic abort
-go run ./cmd/coldmic transcript
-```
-
-JSON output is supported on each command:
-
-```bash
-go run ./cmd/coldmic status --json
-```
-
-Script-friendly status check (no stdout payload):
-
-```bash
-go run ./cmd/coldmic status --check
-# exit 0 when active, exit 1 when idle
-```
-
-Optional no-arg toggle compatibility mode:
-
-```bash
-export COLDMIC_TOGGLE_COMPAT=true
-go run ./cmd/coldmic
-```
-
-When enabled, no-arg CLI invocation checks current status and toggles:
-
-- idle -> `start`
-- active -> `stop`
-
-When `COLDMIC_TOGGLE_COMPAT` is unset or not `true`, no-arg invocation keeps strict behavior and prints usage with an error.
-
-### Conversation Mode
-
-Start a voice assistant conversation (requires `COLDMIC_BACKEND_API_KEY` and a running daemon):
-
-```bash
-go run ./cmd/coldmic conversation start
-go run ./cmd/coldmic conversation status
-go run ./cmd/coldmic conversation stop
-```
-
-JSON output:
-
-```bash
-go run ./cmd/coldmic conversation status --json
-```
-
-Conversation mode uses VAD-gated continuous listening with wake phrase detection, an OpenAI-compatible backend for responses, and edge-tts for speech playback. Say a wake phrase (default: "Hey Alice") to trigger a conversation cycle, and a stop phrase (default: "Thanks Alice", "goodbye", etc.) or silence timeout to end.
-
-Daemon HTTP API:
-
-- `POST /v1/session/start`
-- `POST /v1/session/stop`
-- `POST /v1/session/abort`
-- `GET /v1/session/status`
-- `GET /v1/session/transcript/latest`
-
-## Build
-
-Build everything reproducibly:
-
-```bash
+git clone https://github.com/shivros/coldmic.git
+cd coldmic
 make build
 ```
 
 This produces:
 
-- `build/bin/coldmic-desktop` - the Wails desktop app
-- `build/bin/coldmic` - the CLI client
-- `build/bin/coldmicd` - the headless daemon
+| Binary | Description |
+|--------|-------------|
+| `build/bin/coldmic-desktop` | Wails desktop app with GUI |
+| `build/bin/coldmic` | CLI client |
+| `build/bin/coldmicd` | Headless daemon |
 
-Install the CLI tools into `$(go env GOPATH)/bin`:
+### Install CLI tools
 
 ```bash
 make install-cli
 ```
 
-Important:
+### Run
 
-- Do not use `go run .` or `go install .` for the desktop app at the repo root. Wails desktop apps must be built with the Wails CLI so the correct build tags are applied.
-- If you only want the command-line tools, use `go install ./cmd/coldmic ./cmd/coldmicd` or `make install-cli`.
-
-Build only the desktop app:
+Start the daemon:
 
 ```bash
-wails build
+coldmicd --addr 127.0.0.1:4317
 ```
 
-or:
+Transcribe:
 
 ```bash
-make build-app
+coldmic start      # begin recording
+coldmic status     # check recording state
+coldmic stop       # stop, transcribe, copy to clipboard
+coldmic transcript # show last transcript
 ```
 
-Build only the CLI tools:
+Check version:
 
 ```bash
-make build-cli
+coldmic version    # or: coldmic --version / coldmic -v
 ```
 
-Run the desktop app in development:
+### Development
 
 ```bash
-make dev
+make install-hooks   # first clone only — install lefthook + gitleaks
+make verify-hooks    # verify hooks block test secrets
+make dev             # desktop app in dev mode
+make test            # Go tests
+make ci              # full CI gate (quality + coverage + builds)
 ```
 
-Run tests:
+## Configuration
+
+ColdMic loads configuration in this precedence order:
+
+1. CLI flags (where a command exposes them, e.g. `--daemon-url`)
+2. Environment variables
+3. `~/.config/coldmic/config.yaml`
+4. Built-in defaults
+
+Generate a config template:
 
 ```bash
-make test
+coldmic config init
 ```
 
-Run the same quality gates used by CI:
+Inspect the resolved config (secrets redacted):
 
 ```bash
-make lint-go
-make lint-frontend
-make test-go-race
-make test-go-coverage
-make test-frontend
-make test-frontend-coverage
-make quality-go
-make quality-frontend
-make ci
+coldmic config show
+coldmic config show --json
 ```
 
-Run CI-oriented interface targets directly:
+### Key Environment Variables
+
+**Transcription:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEEPGRAM_API_KEY` | *(required)* | Deepgram API key |
+| `DEEPGRAM_MODEL` | `nova-2` | Deepgram model |
+| `COLDMIC_AUDIO_INPUT_FORMAT` | `pulse` | ffmpeg audio format |
+| `COLDMIC_AUDIO_INPUT_DEVICE` | `default` | Audio input device |
+| `COLDMIC_RULES_FILE` | *(optional)* | Custom substitutions file path |
+| `COLDMIC_DEBUG` | *(off)* | Verbose daemon telemetry when `true`/`1` |
+
+**Daemon:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `COLDMIC_DAEMON_ADDR` | `127.0.0.1:4317` | Daemon bind address |
+| `COLDMIC_DAEMON_URL` | `http://127.0.0.1:4317` | CLI daemon URL |
+| `COLDMIC_TOGGLE_COMPAT` | *(off)* | No-arg toggle mode when `true` |
+
+**Conversation mode:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `COLDMIC_BACKEND_BASE_URL` | `https://api.openai.com/v1` | LLM backend URL |
+| `COLDMIC_BACKEND_API_KEY` | *(required for convo)* | Backend API key |
+| `COLDMIC_BACKEND_MODEL` | `gpt-4o` | Backend model |
+| `COLDMIC_BACKEND_SYSTEM_PROMPT` | `You are a helpful voice assistant.` | System prompt |
+| `COLDMIC_BACKEND_STREAM` | `true` | Stream backend responses |
+| `COLDMIC_WAKE_PHRASES` | `hey alice,alice` | Comma-separated wake phrases |
+| `COLDMIC_STOP_PHRASES` | `thanks alice,that's all,goodbye,bye alice,stop` | Comma-separated stop phrases |
+| `COLDMIC_VAD_THRESHOLD` | `0.5` | Voice activity detection threshold |
+| `COLDMIC_VAD_SILENCE_MS` | `800` | Silence duration to end speech segment |
+| `COLDMIC_CONVERSATION_TIMEOUT` | `30s` | Silence timeout to end conversation |
+
+**Text-to-speech:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `COLDMIC_TTS_ENGINE` | `edge-tts` | TTS engine |
+| `COLDMIC_TTS_VOICE` | `en-US-AriaNeural` | TTS voice |
+| `COLDMIC_TTS_RATE` | `+0%` | TTS speech rate |
+| `COLDMIC_TTS_VOLUME` | `+0%` | TTS volume |
+| `COLDMIC_TTS_PLAYBACK_CMD` | `ffplay` | Audio playback command |
+
+**Local wake-word STT:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `COLDMIC_LOCAL_STT` | *(disabled)* | Set to `whispercpp` to enable local wake detection |
+| `COLDMIC_LOCAL_STT_MODEL` | `tiny.en` | whisper.cpp model name |
+
+Rules file fallback order: `COLDMIC_RULES_FILE` → `~/.config/coldmic/substitutions.rules` → `~/.config/hypr/whisper-substitutions.rules`
+
+### Rules Format
+
+```
+# literal replacement
+wront => wrong
+
+# regex replacement (case-insensitive by default)
+s/teh/the/g
+```
+
+## Voice Assistant Mode
+
+ColdMic can operate as a hands-free voice assistant:
 
 ```bash
-make ci-quality-frontend
-make ci-test-frontend
-make ci-test-go
-make ci-build-cli
-make ci-build-desktop
-make ci-build-desktop-linux
-make verify-ci-contract
+coldmic conversation start    # begin listening for wake phrases
+coldmic conversation status   # show conversation state
+coldmic conversation stop     # end conversation
+```
+
+The pipeline:
+
+```
+Mic → Silero VAD → [optional: whisper.cpp local wake check]
+  → wake phrase match?
+    NO → discard, keep listening (zero Deepgram cost)
+    YES → Deepgram streaming → LLM backend → TTS playback
+```
+
+The backend is any OpenAI-compatible API. Point it at OpenAI, OpenRouter, a local llama.cpp, or your own server.
+
+## Daemon HTTP API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1/session/start` | Begin recording |
+| `POST` | `/v1/session/stop` | Stop recording, return transcript |
+| `POST` | `/v1/session/abort` | Discard recording |
+| `GET` | `/v1/session/status` | Current state |
+| `GET` | `/v1/session/transcript/latest` | Last transcript |
+
+JSON output is available on all CLI commands:
+
+```bash
+coldmic status --json
+coldmic stop --json
+```
+
+Script-friendly exit codes:
+
+```bash
+coldmic status --check   # exit 0 = active, exit 1 = idle
+```
+
+## Toggle Mode
+
+For quick push-to-talk bound to a hotkey:
+
+```bash
+export COLDMIC_TOGGLE_COMPAT=true
+coldmic   # idle → start recording
+coldmic   # active → stop, transcribe
 ```
 
 ## CI
 
-GitHub Actions workflow: `.github/workflows/ci.yml`
+GitHub Actions runs on every PR and push to `main`:
 
-What runs:
+- Go: gofmt, vet, staticcheck, race-enabled tests, 74% coverage gate
+- Frontend: ESLint, Vitest with coverage thresholds
+- Build matrix: Ubuntu, macOS, Windows
 
-- on every pull request
-- on every push to `main`
-- Go quality checks (`gofmt`, `go vet`, `staticcheck`)
-- frontend lint/build checks
-- Go tests (race enabled) + Go coverage gate (default minimum: 74%)
-- frontend tests (Vitest) with coverage thresholds (lines/statements 85%, functions 80%, branches 60%)
-- build matrix for `ubuntu-latest`, `macos-latest`, and `windows-latest`
-- workflow linting (`actionlint`)
-- CI contract verification (`scripts/ci/verify_ci_contract.sh`)
+## License
 
-CI contract (workflow -> Make targets):
-
-- frontend quality job -> `make ci-quality-frontend`
-- frontend test job -> `make ci-test-frontend`
-- matrix CLI build -> `make ci-build-cli`
-- matrix desktop build (Linux) -> `make ci-build-desktop-linux`
-- matrix desktop build (macOS/Windows) -> `make ci-build-desktop`
-
-The old root-package path will fail with:
-
-```text
-Error: Wails applications will not build without the correct build tags.
-```
-
-That message means the desktop app entrypoint was invoked with plain Go tooling instead of `wails build` or `wails dev`.
-
-Legacy direct Wails command:
-
-```bash
-wails build
-```
+MIT
