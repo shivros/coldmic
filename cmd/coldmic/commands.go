@@ -13,6 +13,7 @@ import (
 	coldcli "coldmic/internal/cli"
 	"coldmic/internal/config"
 	"coldmic/internal/domain"
+	"coldmic/internal/version"
 )
 
 const (
@@ -113,9 +114,12 @@ func (r *CommandRunner) registerCommands() {
 	r.register("transcript", "Show latest final transcript", r.runTranscript)
 	r.register("conversation", "Conversation mode commands", r.runConversation)
 	r.register("config", "Configuration file commands", r.runConfig)
+	r.register("version", "Print version information", r.runVersion)
 	r.register("help", "Show this help text", r.runHelp)
 	r.commands["-h"] = r.commands["help"]
 	r.commands["--help"] = r.commands["help"]
+	r.commands["-v"] = r.commands["version"]
+	r.commands["--version"] = r.commands["version"]
 }
 
 func (r *CommandRunner) register(name string, summary string, handler func(args []string) (int, error)) {
@@ -185,6 +189,11 @@ func runStatus(args []string) (int, error) {
 
 func runTranscript(args []string) (int, error) {
 	return NewCommandRunner(nil, nil, nil, nil).runTranscript(args)
+}
+
+func (r *CommandRunner) runVersion(_ []string) (int, error) {
+	fmt.Fprintf(r.stdout, "coldmic %s\n", version.Version)
+	return exitOK, nil
 }
 
 func (r *CommandRunner) runHelp(_ []string) (int, error) {
