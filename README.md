@@ -29,7 +29,33 @@ This is the initial functional slice, not the full product.
 
 ## Configuration
 
-Environment variables:
+ColdMIC loads configuration in this precedence order:
+
+1. CLI flags (where a command exposes them, such as `--daemon-url`)
+2. Environment variables
+3. `~/.config/coldmic/config.yaml`
+4. Built-in defaults
+
+Create a documented YAML template:
+
+```bash
+go run ./cmd/coldmic config init
+```
+
+Inspect the resolved config after YAML and environment overrides. Secret values are redacted
+in command output:
+
+```bash
+go run ./cmd/coldmic config show
+# or machine-readable output
+go run ./cmd/coldmic config show --json
+```
+
+Existing `.envrc`-style setup still works: every previous environment variable
+continues to override the YAML file. Set `COLDMIC_CONFIG_FILE` to load a config
+from a non-default path.
+
+Primary environment variables:
 
 - `DEEPGRAM_API_KEY` (required)
 - `DEEPGRAM_API_BASE` (default: `https://api.deepgram.com/v1`)

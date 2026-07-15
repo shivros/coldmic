@@ -13,13 +13,21 @@ import (
 	"time"
 
 	"coldmic/internal/bootstrap"
+	"coldmic/internal/config"
 	"coldmic/internal/daemon"
 	"coldmic/internal/debuglog"
 	"coldmic/internal/ports"
 )
 
 func main() {
-	addrDefault := envOrDefault("COLDMIC_DAEMON_ADDR", "127.0.0.1:4317")
+	resolved, err := config.Load()
+	if err != nil {
+		log.Fatalf("coldmicd config failed: %v", err)
+	}
+	addrDefault := resolved.Daemon.Addr
+	if addrDefault == "" {
+		addrDefault = "127.0.0.1:4317"
+	}
 	addr := flag.String("addr", addrDefault, "daemon bind address")
 	flag.Parse()
 

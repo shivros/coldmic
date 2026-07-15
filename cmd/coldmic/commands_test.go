@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,57 @@ func TestRunCommandHelp(t *testing.T) {
 	}
 	if code != exitOK {
 		t.Fatalf("unexpected exit code: %d", code)
+	}
+}
+
+func TestRunConfigInitAndShow(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	runner := NewCommandRunner(nil, nil, &stdout, &stderr)
+
+	code, err := runner.Run("config", []string{"init"})
+	if err != nil || code != exitOK {
+		t.Fatalf("config init failed: code=%d err=%v stderr=%s", code, err, stderr.String())
+	}
+	configPath := filepath.Join(home, ".config", "coldmic", "config.yaml")
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("expected config template: %v", err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code, err = runner.Run("config", []string{"show"})
+	if err != nil || code != exitOK {
+		t.Fatalf("config show failed: code=%d err=%v stderr=%s", code, err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "deepgram:") || !strings.Contains(stdout.String(), "audio:") {
+		t.Fatalf("expected resolved YAML config, got %s", stdout.String())
+	}
+}
+
+func TestRunConfigShowInvalidConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	configPath := filepath.Join(home, ".config", "coldmic", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	if err := os.WriteFile(configPath, []byte("continuous:\n  vad_engine: nonsense\n"), 0o600); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	runner := NewCommandRunner(nil, nil, &stdout, &stderr)
+	code, err := runner.Run("config", []string{"show"})
+	if err == nil || code != exitGeneric {
+		t.Fatalf("expected config show error, code=%d err=%v", code, err)
+	}
+	if !strings.Contains(err.Error(), "continuous.vad_engine") {
+		t.Fatalf("expected human-readable validation error, got %v", err)
 	}
 }
 
