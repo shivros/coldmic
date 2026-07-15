@@ -638,17 +638,6 @@ func setEnvFirstString(keys []string, dst *string) {
 	}
 }
 
-func setEnvInt(key string, dst *int) {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return
-	}
-	parsed, err := strconv.Atoi(value)
-	if err == nil {
-		*dst = parsed
-	}
-}
-
 func setEnvPositiveInt(key string, dst *int, minimum int) {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
@@ -703,17 +692,6 @@ func setEnvFirstNonNegativeInt(keys []string, dst *time.Duration) {
 			*dst = time.Duration(parsed) * time.Millisecond
 			return
 		}
-	}
-}
-
-func setEnvFloat(key string, dst *float64) {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return
-	}
-	parsed, err := strconv.ParseFloat(value, 64)
-	if err == nil {
-		*dst = parsed
 	}
 }
 
