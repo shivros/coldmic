@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"coldmic/internal/audio"
 	coldcli "coldmic/internal/cli"
 	"coldmic/internal/domain"
 )
@@ -36,6 +37,74 @@ func TestRunCommandHelp(t *testing.T) {
 	}
 	if code != exitOK {
 		t.Fatalf("unexpected exit code: %d", code)
+	}
+}
+
+func TestRunDevicesListAndSet(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	oldList := listInputDevices
+	oldSet := setAudioInputDevice
+	defer func() {
+		listInputDevices = oldList
+		setAudioInputDevice = oldSet
+	}()
+	listInputDevices = func(ctx context.Context, command string, inputFormat string) ([]audio.InputDevice, error) {
+		return []audio.InputDevice{
+			{Index: 0, Name: "default", Description: "Default", Default: true},
+			{Index: 1, Name: "usb-mic", Description: "USB Microphone"},
+		}, nil
+	}
+	var selected string
+	setAudioInputDevice = func(path string, device string) error {
+		selected = device
+		return nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	runner := NewCommandRunner(nil, nil, &stdout, &stderr)
+
+	code, err := runner.Run("devices", []string{"list", "--json"})
+	if err != nil || code != exitOK {
+		t.Fatalf("devices list failed: code=%d err=%v stderr=%s", code, err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"name": "default"`) || !strings.Contains(stdout.String(), `"selected": true`) {
+		t.Fatalf("expected JSON device list with selected default, got %s", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code, err = runner.Run("devices", []string{"set", "1"})
+	if err != nil || code != exitOK {
+		t.Fatalf("devices set failed: code=%d err=%v stderr=%s", code, err, stderr.String())
+	}
+	if selected != "usb-mic" {
+		t.Fatalf("expected persisted usb-mic, got %q", selected)
+	}
+}
+
+func TestRunDevicesDefaultDoesNotWarn(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("COLDMIC_AUDIO_INPUT_DEVICE", "default")
+
+	oldList := listInputDevices
+	defer func() { listInputDevices = oldList }()
+	listInputDevices = func(ctx context.Context, command string, inputFormat string) ([]audio.InputDevice, error) {
+		return []audio.InputDevice{{Index: 3, Name: "real-default", Default: true}}, nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	runner := NewCommandRunner(nil, nil, &stdout, &stderr)
+	code, err := runner.Run("devices", []string{"list", "--json"})
+	if err != nil || code != exitOK {
+		t.Fatalf("devices list failed: code=%d err=%v", code, err)
+	}
+	if strings.Contains(stderr.String(), "Warning:") {
+		t.Fatalf("did not expect default warning, got %s", stderr.String())
 	}
 }
 

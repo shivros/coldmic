@@ -353,6 +353,39 @@ func TestLoadConversationConfigDefaults(t *testing.T) {
 	}
 }
 
+func TestSetAudioInputDeviceCreatesConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := SetAudioInputDevice(path, "usb-mic"); err != nil {
+		t.Fatalf("SetAudioInputDevice failed: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config failed: %v", err)
+	}
+	if !strings.Contains(string(data), "input_device: usb-mic") {
+		t.Fatalf("expected persisted input device, got:\n%s", string(data))
+	}
+}
+
+func TestSetAudioInputDevicePreservesOtherConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	initial := []byte("deepgram:\n  model: nova-3\naudio:\n  input_format: pulse\n")
+	if err := os.WriteFile(path, initial, 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+	if err := SetAudioInputDevice(path, "alsa_input.usb"); err != nil {
+		t.Fatalf("SetAudioInputDevice failed: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config failed: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "model: nova-3") || !strings.Contains(text, "input_format: pulse") || !strings.Contains(text, "input_device: alsa_input.usb") {
+		t.Fatalf("expected preserved config and input device, got:\n%s", text)
+	}
+}
+
 func TestEnvOrDefaultDuration(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("COLDMIC_CONVERSATION_TIMEOUT", "10s")
