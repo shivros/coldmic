@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"strconv"
@@ -70,7 +71,13 @@ func (c *FFMPEGCapture) Start(ctx context.Context, cfg ports.AudioConfig) (ports
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ffmpeg stdout pipe: %w", err)
 	}
-	if err := cmd.Start(); err != nil {
+	if err := cmd.Start(); err != nil && cfg.InputDevice != "default" {
+		debuglog.Printf("ffmpeg failed to start with input_device=%s: %v; retrying default", cfg.InputDevice, err)
+		log.Printf("Warning: audio input device %q is unavailable; falling back to default", cfg.InputDevice)
+		fallbackCfg := cfg
+		fallbackCfg.InputDevice = "default"
+		return c.Start(ctx, fallbackCfg)
+	} else if err != nil {
 		debuglog.Printf("ffmpeg failed to start: %v", err)
 		return nil, fmt.Errorf("failed to start ffmpeg: %w", err)
 	}
@@ -88,9 +95,23 @@ func (c *FFMPEGCapture) Start(ctx context.Context, cfg ports.AudioConfig) (ports
 	case err := <-waitErr:
 		if err != nil {
 			debuglog.Printf("ffmpeg exited before capture started: %v stderr=%q", err, stringsTrimSpaceSafe(stderr.String()))
+			if cfg.InputDevice != "default" {
+				debuglog.Printf("retrying ffmpeg capture with default input device after startup failure")
+				log.Printf("Warning: audio input device %q is unavailable; falling back to default", cfg.InputDevice)
+				fallbackCfg := cfg
+				fallbackCfg.InputDevice = "default"
+				return c.Start(ctx, fallbackCfg)
+			}
 			return nil, fmt.Errorf("ffmpeg exited before capture started: %w: %s", err, stringsTrimSpaceSafe(stderr.String()))
 		}
 		debuglog.Printf("ffmpeg exited before capture started without error")
+		if cfg.InputDevice != "default" {
+			debuglog.Printf("retrying ffmpeg capture with default input device after early exit")
+			log.Printf("Warning: audio input device %q is unavailable; falling back to default", cfg.InputDevice)
+			fallbackCfg := cfg
+			fallbackCfg.InputDevice = "default"
+			return c.Start(ctx, fallbackCfg)
+		}
 		return nil, errors.New("ffmpeg exited before capture started")
 	case <-time.After(250 * time.Millisecond):
 	}

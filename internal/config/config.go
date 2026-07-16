@@ -164,6 +164,57 @@ func WriteTemplate(path string) error {
 	return nil
 }
 
+// SetAudioInputDevice persists the selected audio input device in the YAML config.
+func SetAudioInputDevice(path string, device string) error {
+	device = strings.TrimSpace(device)
+	if device == "" {
+		return errors.New("audio input device must not be empty")
+	}
+	if strings.TrimSpace(path) == "" {
+		defaultPath, err := DefaultPath()
+		if err != nil {
+			return err
+		}
+		path = defaultPath
+	}
+
+	root := yaml.Node{Kind: yaml.MappingNode}
+	if data, err := os.ReadFile(path); err == nil && len(bytes.TrimSpace(data)) > 0 {
+		if err := yaml.Unmarshal(data, &root); err != nil {
+			return fmt.Errorf("parse config file %s: %w", path, err)
+		}
+	} else if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read config file %s: %w", path, err)
+	}
+
+	if root.Kind == 0 {
+		root.Kind = yaml.MappingNode
+	}
+	mapping := &root
+	if root.Kind == yaml.DocumentNode {
+		if len(root.Content) == 0 {
+			root.Content = append(root.Content, &yaml.Node{Kind: yaml.MappingNode})
+		}
+		mapping = root.Content[0]
+	}
+	if mapping.Kind != yaml.MappingNode {
+		return fmt.Errorf("config file %s must contain a YAML mapping", path)
+	}
+	setNestedString(mapping, []string{"audio", "input_device"}, device)
+
+	data, err := yaml.Marshal(&root)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return fmt.Errorf("write config file %s: %w", path, err)
+	}
+	return nil
+}
+
 // MarshalYAML renders a resolved config as documented YAML.
 func MarshalYAML(cfg Config) ([]byte, error) {
 	return yaml.Marshal(cfg)
@@ -551,6 +602,51 @@ func normalize(cfg *Config) {
 	cfg.Conversation.StopPhrases = normalizePhrases(cfg.Conversation.StopPhrases)
 	cfg.Continuous.WakePhrases = normalizePhrases(cfg.Continuous.WakePhrases)
 	cfg.Continuous.VADEngine = strings.ToLower(strings.TrimSpace(cfg.Continuous.VADEngine))
+}
+
+func setNestedString(root *yaml.Node, path []string, value string) {
+	current := root
+	for i, key := range path {
+		if i == len(path)-1 {
+			setMappingScalar(current, key, value)
+			return
+		}
+		next := getMappingValue(current, key)
+		if next == nil || next.Kind != yaml.MappingNode {
+			next = &yaml.Node{Kind: yaml.MappingNode}
+			setMappingNode(current, key, next)
+		}
+		current = next
+	}
+}
+
+func setMappingScalar(mapping *yaml.Node, key string, value string) {
+	setMappingNode(mapping, key, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value})
+}
+
+func setMappingNode(mapping *yaml.Node, key string, value *yaml.Node) {
+	if mapping.Kind != yaml.MappingNode {
+		mapping.Kind = yaml.MappingNode
+	}
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			mapping.Content[i+1] = value
+			return
+		}
+	}
+	mapping.Content = append(mapping.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}, value)
+}
+
+func getMappingValue(mapping *yaml.Node, key string) *yaml.Node {
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			return mapping.Content[i+1]
+		}
+	}
+	return nil
 }
 
 func firstExisting(paths ...string) string {

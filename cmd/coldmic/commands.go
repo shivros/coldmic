@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"coldmic/internal/audio"
 	coldcli "coldmic/internal/cli"
 	"coldmic/internal/config"
 	"coldmic/internal/domain"
@@ -41,6 +43,11 @@ type configProvider interface {
 	DaemonURL() string
 	ToggleCompatEnabled() bool
 }
+
+var (
+	listInputDevices    = audio.ListInputDevices
+	setAudioInputDevice = config.SetAudioInputDevice
+)
 
 type envConfigProvider struct{}
 
@@ -113,6 +120,7 @@ func (r *CommandRunner) registerCommands() {
 	r.register("status", "Show current recording state", r.runStatus)
 	r.register("transcript", "Show latest final transcript", r.runTranscript)
 	r.register("conversation", "Conversation mode commands", r.runConversation)
+	r.register("devices", "Audio input device commands", r.runDevices)
 	r.register("config", "Configuration file commands", r.runConfig)
 	r.register("version", "Print version information", r.runVersion)
 	r.register("help", "Show this help text", r.runHelp)
@@ -382,6 +390,88 @@ func (r *CommandRunner) runConversationStatus(args []string) (int, error) {
 	return exitOK, nil
 }
 
+func (r *CommandRunner) runDevices(args []string) (int, error) {
+	if len(args) == 0 {
+		fmt.Fprintln(r.stderr, "Usage: coldmic devices <list|set> [flags]")
+		return exitGeneric, fmt.Errorf("missing devices subcommand")
+	}
+
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("devices list", flag.ContinueOnError)
+		fs.SetOutput(r.stderr)
+		outputJSON := false
+		fs.BoolVar(&outputJSON, "json", false, "emit JSON output")
+		if err := fs.Parse(args[1:]); err != nil {
+			return exitGeneric, err
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return exitGeneric, err
+		}
+		devices, err := listInputDevices(context.Background(), cfg.Audio.RecorderCommand, cfg.Audio.InputFormat)
+		if err != nil {
+			return exitGeneric, err
+		}
+		selected := audio.ResolveInputDevice(devices, cfg.Audio.InputDevice)
+		if cfg.Audio.InputDevice != "" && !deviceMatchesSelection(devices, cfg.Audio.InputDevice) {
+			fmt.Fprintf(r.stderr, "Warning: configured audio input device %q is unavailable; using %q\n", cfg.Audio.InputDevice, selected.Name)
+		}
+		if outputJSON {
+			writeJSON(r.stdout, cliDevicesOutput{Devices: markSelectedDevices(devices, selected.Name)})
+			return exitOK, nil
+		}
+		for _, device := range markSelectedDevices(devices, selected.Name) {
+			markers := []string{" "}
+			if device.Default {
+				markers = append(markers, "default")
+			}
+			if device.Selected {
+				markers = append(markers, "selected")
+			}
+			description := ""
+			if device.Description != "" {
+				description = " — " + device.Description
+			}
+			fmt.Fprintf(r.stdout, "%d\t%s\t%s%s\n", device.Index, strings.Join(markers, ","), device.Name, description)
+		}
+		return exitOK, nil
+	case "set":
+		fs := flag.NewFlagSet("devices set", flag.ContinueOnError)
+		fs.SetOutput(r.stderr)
+		configPath := ""
+		fs.StringVar(&configPath, "config", "", "config file path (default: ~/.config/coldmic/config.yaml)")
+		if err := fs.Parse(args[1:]); err != nil {
+			return exitGeneric, err
+		}
+		if fs.NArg() != 1 {
+			fmt.Fprintln(r.stderr, "Usage: coldmic devices set [--config PATH] <index|name>")
+			return exitGeneric, fmt.Errorf("missing device index or name")
+		}
+		selection := fs.Arg(0)
+		cfg, err := loadConfigForCommand(configPath)
+		if err != nil {
+			return exitGeneric, err
+		}
+		devices, err := listInputDevices(context.Background(), cfg.Audio.RecorderCommand, cfg.Audio.InputFormat)
+		if err != nil {
+			return exitGeneric, err
+		}
+		device := audio.ResolveInputDevice(devices, selection)
+		if selection != device.Name && selection != fmt.Sprint(device.Index) {
+			return exitNotFound, fmt.Errorf("audio input device not found: %s", selection)
+		}
+		if err := setAudioInputDevice(configPath, device.Name); err != nil {
+			return exitGeneric, err
+		}
+		fmt.Fprintf(r.stdout, "Selected audio input device %d (%s)\n", device.Index, device.Name)
+		return exitOK, nil
+	default:
+		fmt.Fprintln(r.stderr, "Usage: coldmic devices <list|set> [flags]")
+		return exitGeneric, fmt.Errorf("unknown devices subcommand: %s", args[0])
+	}
+}
+
 func (r *CommandRunner) runConfig(args []string) (int, error) {
 	if len(args) == 0 {
 		fmt.Fprintln(r.stderr, "Usage: coldmic config <init|show> [flags]")
@@ -517,6 +607,10 @@ func (r *CommandRunner) printUsage() {
 	fmt.Fprintln(r.stdout, "  conversation stop    Stop active conversation")
 	fmt.Fprintln(r.stdout, "  conversation status  Show conversation state")
 	fmt.Fprintln(r.stdout, "")
+	fmt.Fprintln(r.stdout, "Device subcommands:")
+	fmt.Fprintln(r.stdout, "  devices list         List available audio input devices")
+	fmt.Fprintln(r.stdout, "  devices set DEVICE   Persist selected audio input device")
+	fmt.Fprintln(r.stdout, "")
 	fmt.Fprintln(r.stdout, "Config subcommands:")
 	fmt.Fprintln(r.stdout, "  config init          Write ~/.config/coldmic/config.yaml template")
 	fmt.Fprintln(r.stdout, "  config show          Show resolved config after file/env overrides")
@@ -549,6 +643,82 @@ type cliTranscriptOutput struct {
 
 type cliConversationOutput struct {
 	Status domain.ConversationStatus `json:"status"`
+}
+
+type cliDeviceOutput struct {
+	Index       int    `json:"index"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Default     bool   `json:"is_default"`
+	Selected    bool   `json:"selected"`
+}
+
+type cliDevicesOutput struct {
+	Devices []cliDeviceOutput `json:"devices"`
+}
+
+func markSelectedDevices(devices []audio.InputDevice, selectedName string) []cliDeviceOutput {
+	out := make([]cliDeviceOutput, 0, len(devices))
+	for _, device := range devices {
+		out = append(out, cliDeviceOutput{
+			Index:       device.Index,
+			Name:        device.Name,
+			Description: device.Description,
+			Default:     device.Default,
+			Selected:    device.Name == selectedName,
+		})
+	}
+	return out
+}
+
+func deviceMatchesSelection(devices []audio.InputDevice, selected string) bool {
+	selected = strings.TrimSpace(selected)
+	if selected == "" {
+		return false
+	}
+	if selected == "default" {
+		for _, device := range devices {
+			if device.Default {
+				return true
+			}
+		}
+	}
+	if idx, err := strconv.Atoi(selected); err == nil {
+		for _, device := range devices {
+			if device.Index == idx {
+				return true
+			}
+		}
+	}
+	for _, device := range devices {
+		if device.Name == selected {
+			return true
+		}
+	}
+	return false
+}
+
+func loadConfigForCommand(path string) (config.Config, error) {
+	if strings.TrimSpace(path) == "" {
+		return config.Load()
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return config.Load()
+	} else if err != nil {
+		return config.Config{}, err
+	}
+	previous, hadPrevious := os.LookupEnv("COLDMIC_CONFIG_FILE")
+	if err := os.Setenv("COLDMIC_CONFIG_FILE", path); err != nil {
+		return config.Config{}, err
+	}
+	defer func() {
+		if hadPrevious {
+			_ = os.Setenv("COLDMIC_CONFIG_FILE", previous)
+		} else {
+			_ = os.Unsetenv("COLDMIC_CONFIG_FILE")
+		}
+	}()
+	return config.Load()
 }
 
 func toggleCompatEnabled() bool {

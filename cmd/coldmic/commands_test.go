@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"coldmic/internal/audio"
 	coldcli "coldmic/internal/cli"
 	"coldmic/internal/domain"
 )
@@ -36,6 +37,183 @@ func TestRunCommandHelp(t *testing.T) {
 	}
 	if code != exitOK {
 		t.Fatalf("unexpected exit code: %d", code)
+	}
+}
+
+func TestRunDevicesListAndSet(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	oldList := listInputDevices
+	oldSet := setAudioInputDevice
+	defer func() {
+		listInputDevices = oldList
+		setAudioInputDevice = oldSet
+	}()
+	listInputDevices = func(ctx context.Context, command string, inputFormat string) ([]audio.InputDevice, error) {
+		return []audio.InputDevice{
+			{Index: 0, Name: "default", Description: "Default", Default: true},
+			{Index: 1, Name: "usb-mic", Description: "USB Microphone"},
+		}, nil
+	}
+	var selected string
+	setAudioInputDevice = func(path string, device string) error {
+		selected = device
+		return nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	runner := NewCommandRunner(nil, nil, &stdout, &stderr)
+
+	code, err := runner.Run("devices", []string{"list", "--json"})
+	if err != nil || code != exitOK {
+		t.Fatalf("devices list failed: code=%d err=%v stderr=%s", code, err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"name": "default"`) || !strings.Contains(stdout.String(), `"selected": true`) {
+		t.Fatalf("expected JSON device list with selected default, got %s", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code, err = runner.Run("devices", []string{"set", "1"})
+	if err != nil || code != exitOK {
+		t.Fatalf("devices set failed: code=%d err=%v stderr=%s", code, err, stderr.String())
+	}
+	if selected != "usb-mic" {
+		t.Fatalf("expected persisted usb-mic, got %q", selected)
+	}
+}
+
+func TestRunDevicesDefaultDoesNotWarn(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("COLDMIC_AUDIO_INPUT_DEVICE", "default")
+
+	oldList := listInputDevices
+	defer func() { listInputDevices = oldList }()
+	listInputDevices = func(ctx context.Context, command string, inputFormat string) ([]audio.InputDevice, error) {
+		return []audio.InputDevice{{Index: 3, Name: "real-default", Default: true}}, nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	runner := NewCommandRunner(nil, nil, &stdout, &stderr)
+	code, err := runner.Run("devices", []string{"list", "--json"})
+	if err != nil || code != exitOK {
+		t.Fatalf("devices list failed: code=%d err=%v", code, err)
+	}
+	if strings.Contains(stderr.String(), "Warning:") {
+		t.Fatalf("did not expect default warning, got %s", stderr.String())
+	}
+}
+
+func TestRunDevicesListWarnsForUnavailableConfiguredDevice(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("COLDMIC_AUDIO_INPUT_DEVICE", "missing-mic")
+
+	oldList := listInputDevices
+	defer func() { listInputDevices = oldList }()
+	listInputDevices = func(ctx context.Context, command string, inputFormat string) ([]audio.InputDevice, error) {
+		return []audio.InputDevice{
+			{Index: 0, Name: "default", Description: "Default", Default: true},
+			{Index: 2, Name: "usb-mic", Description: "USB Microphone"},
+		}, nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	runner := NewCommandRunner(nil, nil, &stdout, &stderr)
+	code, err := runner.Run("devices", []string{"list"})
+	if err != nil || code != exitOK {
+		t.Fatalf("devices list failed: code=%d err=%v stderr=%s", code, err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "missing-mic") || !strings.Contains(stderr.String(), "default") {
+		t.Fatalf("expected unavailable-device warning, got %s", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "0	 ,default,selected	default — Default") || !strings.Contains(stdout.String(), "2	 	usb-mic — USB Microphone") {
+		t.Fatalf("expected text device list, got %s", stdout.String())
+	}
+}
+
+func TestRunDevicesSetRejectsMissingAndUnknownSelections(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	oldList := listInputDevices
+	oldSet := setAudioInputDevice
+	defer func() {
+		listInputDevices = oldList
+		setAudioInputDevice = oldSet
+	}()
+	listInputDevices = func(ctx context.Context, command string, inputFormat string) ([]audio.InputDevice, error) {
+		return []audio.InputDevice{{Index: 0, Name: "default", Default: true}}, nil
+	}
+	setAudioInputDevice = func(path string, device string) error {
+		t.Fatalf("setAudioInputDevice should not be called for invalid selections")
+		return nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	runner := NewCommandRunner(nil, nil, &stdout, &stderr)
+	code, err := runner.Run("devices", []string{"set"})
+	if err == nil || code != exitGeneric {
+		t.Fatalf("expected missing selection error, code=%d err=%v", code, err)
+	}
+	code, err = runner.Run("devices", []string{"set", "not-real"})
+	if err == nil || code != exitNotFound {
+		t.Fatalf("expected not found error, code=%d err=%v", code, err)
+	}
+}
+
+func TestRunDevicesRejectsUnknownSubcommand(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	runner := NewCommandRunner(nil, nil, &stdout, &stderr)
+	code, err := runner.Run("devices", []string{"wat"})
+	if err == nil || code != exitGeneric {
+		t.Fatalf("expected unknown subcommand error, code=%d err=%v", code, err)
+	}
+	if !strings.Contains(stderr.String(), "Usage: coldmic devices") {
+		t.Fatalf("expected devices usage, got %s", stderr.String())
+	}
+}
+
+func TestRunDevicesListPropagatesListError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	oldList := listInputDevices
+	defer func() { listInputDevices = oldList }()
+	listInputDevices = func(ctx context.Context, command string, inputFormat string) ([]audio.InputDevice, error) {
+		return nil, errors.New("ffmpeg exploded")
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	runner := NewCommandRunner(nil, nil, &stdout, &stderr)
+	code, err := runner.Run("devices", []string{"list"})
+	if err == nil || code != exitGeneric || !strings.Contains(err.Error(), "ffmpeg exploded") {
+		t.Fatalf("expected list error, code=%d err=%v", code, err)
+	}
+}
+
+func TestDeviceMatchesSelectionCoversDefaultIndexAndName(t *testing.T) {
+	devices := []audio.InputDevice{
+		{Index: 5, Name: "real-default", Default: true},
+		{Index: 9, Name: "usb-mic"},
+	}
+	for _, selected := range []string{"default", "9", "usb-mic"} {
+		if !deviceMatchesSelection(devices, selected) {
+			t.Fatalf("expected %q to match", selected)
+		}
+	}
+	for _, selected := range []string{"", "missing", "8"} {
+		if deviceMatchesSelection(devices, selected) {
+			t.Fatalf("expected %q not to match", selected)
+		}
 	}
 }
 

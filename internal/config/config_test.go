@@ -353,6 +353,82 @@ func TestLoadConversationConfigDefaults(t *testing.T) {
 	}
 }
 
+func TestSetAudioInputDeviceCreatesConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := SetAudioInputDevice(path, "usb-mic"); err != nil {
+		t.Fatalf("SetAudioInputDevice failed: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config failed: %v", err)
+	}
+	if !strings.Contains(string(data), "input_device: usb-mic") {
+		t.Fatalf("expected persisted input device, got:\n%s", string(data))
+	}
+}
+
+func TestSetAudioInputDevicePreservesOtherConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	initial := []byte("deepgram:\n  model: nova-3\naudio:\n  input_format: pulse\n")
+	if err := os.WriteFile(path, initial, 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+	if err := SetAudioInputDevice(path, "alsa_input.usb"); err != nil {
+		t.Fatalf("SetAudioInputDevice failed: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config failed: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "model: nova-3") || !strings.Contains(text, "input_format: pulse") || !strings.Contains(text, "input_device: alsa_input.usb") {
+		t.Fatalf("expected preserved config and input device, got:\n%s", text)
+	}
+}
+
+func TestSetAudioInputDeviceRejectsBlankSelection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	err := SetAudioInputDevice(path, "   ")
+	if err == nil || !strings.Contains(err.Error(), "must not be empty") {
+		t.Fatalf("expected blank device error, got %v", err)
+	}
+}
+
+func TestSetAudioInputDeviceRejectsInvalidYAML(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("audio: ["), 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+	err := SetAudioInputDevice(path, "usb-mic")
+	if err == nil || !strings.Contains(err.Error(), "parse config file") {
+		t.Fatalf("expected parse error, got %v", err)
+	}
+}
+
+func TestMarshalYAMLAndRedactSecrets(t *testing.T) {
+	cfg := Config{
+		Deepgram:     DeepgramConfig{APIKey: "deep-secret", APIBaseURL: "https://example.com", Model: "nova"},
+		Conversation: ConversationConfig{APIKey: "chat-secret", Provider: "openai", BaseURL: "https://chat.example.com", Model: "gpt", Timeout: time.Second, SilenceTimeout: time.Second},
+		Audio:        AudioConfig{RecorderCommand: "ffmpeg", SampleRate: 16000, Channels: 1},
+		Rules:        RulesConfig{IterationLimit: 1},
+		Continuous:   ContinuousConfig{VADEngine: "silero", VADThreshold: 500, SilenceMs: 800, FrameMs: 30},
+		TTS:          TTSConfig{Engine: "edge-tts", PlaybackCmd: "ffplay"},
+	}
+
+	redacted := RedactSecrets(cfg)
+	if redacted.Deepgram.APIKey != "[redacted]" || redacted.Conversation.APIKey != "[redacted]" {
+		t.Fatalf("expected secrets redacted, got deepgram=%q conversation=%q", redacted.Deepgram.APIKey, redacted.Conversation.APIKey)
+	}
+	data, err := MarshalYAML(redacted)
+	if err != nil {
+		t.Fatalf("MarshalYAML failed: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "api_key: '[redacted]'") || strings.Contains(text, "deep-secret") || strings.Contains(text, "chat-secret") {
+		t.Fatalf("expected redacted YAML, got:\n%s", text)
+	}
+}
+
 func TestEnvOrDefaultDuration(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("COLDMIC_CONVERSATION_TIMEOUT", "10s")
