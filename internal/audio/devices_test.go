@@ -1,6 +1,13 @@
 package audio
 
-import "testing"
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+)
 
 func TestParseInputDevicesPulseOutput(t *testing.T) {
 	raw := `Auto-detected sources for pulse:
@@ -43,6 +50,65 @@ func TestParseInputDevicesSkipsCannotListDiagnostics(t *testing.T) {
 	}
 }
 
+func TestListInputDevicesUsesCommandDefaults(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell helper uses POSIX sh")
+	}
+	fakeFFmpeg := filepath.Join(t.TempDir(), "ffmpeg")
+	script := `#!/bin/sh
+if [ "$1" != "-hide_banner" ] || [ "$2" != "-sources" ] || [ "$3" != "pulse" ]; then
+  echo "unexpected args: $*" >&2
+  exit 7
+fi
+cat <<'EOF'
+Auto-detected sources for pulse:
+* default [Default source]
+  usb-mic [USB Microphone]
+EOF
+`
+	if err := os.WriteFile(fakeFFmpeg, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake ffmpeg: %v", err)
+	}
+
+	devices, err := ListInputDevices(context.Background(), fakeFFmpeg, "")
+	if err != nil {
+		t.Fatalf("ListInputDevices returned error: %v", err)
+	}
+	if len(devices) != 2 || devices[1].Name != "usb-mic" || devices[1].Description != "USB Microphone" {
+		t.Fatalf("unexpected devices: %+v", devices)
+	}
+}
+
+func TestListInputDevicesReportsCommandFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell helper uses POSIX sh")
+	}
+	fakeFFmpeg := filepath.Join(t.TempDir(), "ffmpeg")
+	if err := os.WriteFile(fakeFFmpeg, []byte("#!/bin/sh\necho boom >&2\nexit 9\n"), 0o755); err != nil {
+		t.Fatalf("write fake ffmpeg: %v", err)
+	}
+
+	_, err := ListInputDevices(context.Background(), fakeFFmpeg, "alsa")
+	if err == nil || !strings.Contains(err.Error(), "boom") || !strings.Contains(err.Error(), "alsa") {
+		t.Fatalf("expected command output in error, got %v", err)
+	}
+}
+
+func TestListInputDevicesReportsEmptySourceList(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell helper uses POSIX sh")
+	}
+	fakeFFmpeg := filepath.Join(t.TempDir(), "ffmpeg")
+	if err := os.WriteFile(fakeFFmpeg, []byte("#!/bin/sh\necho 'Auto-detected sources for pulse:'\n"), 0o755); err != nil {
+		t.Fatalf("write fake ffmpeg: %v", err)
+	}
+
+	_, err := ListInputDevices(context.Background(), fakeFFmpeg, "pulse")
+	if err == nil || !strings.Contains(err.Error(), "no pulse input devices") {
+		t.Fatalf("expected empty source list error, got %v", err)
+	}
+}
+
 func TestResolveInputDeviceFallsBackToDefault(t *testing.T) {
 	devices := []InputDevice{
 		{Index: 0, Name: "default", Default: true},
@@ -53,5 +119,15 @@ func TestResolveInputDeviceFallsBackToDefault(t *testing.T) {
 	}
 	if got := ResolveInputDevice(devices, "missing"); got.Name != "default" {
 		t.Fatalf("expected fallback default, got %+v", got)
+	}
+}
+
+func TestResolveInputDeviceFallsBackToFirstAndSyntheticDefault(t *testing.T) {
+	devices := []InputDevice{{Index: 7, Name: "line-in"}}
+	if got := ResolveInputDevice(devices, "missing"); got.Name != "line-in" {
+		t.Fatalf("expected first device fallback, got %+v", got)
+	}
+	if got := ResolveInputDevice(nil, "missing"); got.Name != "default" || !got.Default {
+		t.Fatalf("expected synthetic default fallback, got %+v", got)
 	}
 }
