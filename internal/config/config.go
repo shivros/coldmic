@@ -940,7 +940,7 @@ conversation:
 continuous:
   wake_phrases: ["hey alice", "alice"] # COLDMIC_WAKE_PHRASES
   vad_engine: "silero" # COLDMIC_VAD_ENGINE; one of: silero, energy
-  vad_threshold: 500 # COLDMIC_VAD_THRESHOLD
+  vad_threshold: 0.5 # COLDMIC_VAD_THRESHOLD (Silero speech probability 0-1; use higher for EnergyVAD RMS)
   silence_ms: 800 # COLDMIC_VAD_SILENCE_MS
   frame_ms: 30 # COLDMIC_VAD_FRAME_MS
   local_stt:

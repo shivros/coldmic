@@ -401,7 +401,7 @@ func (l *ContinuousListener) Start(ctx context.Context) error {
 				frame := chunk[offset:end]
 
 				prob, _ := l.vad.Process(frame)
-				if prob > 0.5 {
+				if prob > l.cfg.VADThreshold {
 					// Speech detected.
 					if !speechActive {
 						audioBuf = make([]byte, len(chunk))
