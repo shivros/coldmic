@@ -331,9 +331,10 @@ func defaults(home string) Config {
 			SilenceTimeout: 30 * time.Second,
 		},
 		Continuous: ContinuousConfig{
-			WakePhrases:  parseWakePhrases("hey alice,alice"),
-			VADEngine:    "silero",
-			VADThreshold: 500,
+			WakePhrases: parseWakePhrases("hey alice,alice"),
+			VADEngine:   "silero",
+			// Silero VAD returns a speech probability in the 0.0–1.0 range.
+			VADThreshold: 0.5,
 			SilenceMs:    800,
 			FrameMs:      30,
 			LocalSTT: LocalSTTConfig{

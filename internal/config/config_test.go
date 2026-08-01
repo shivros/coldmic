@@ -257,8 +257,8 @@ func TestLoadContinuousConfigDefaults(t *testing.T) {
 	if cfg.Continuous.VADEngine != "silero" {
 		t.Fatalf("expected default VADEngine=silero, got %q", cfg.Continuous.VADEngine)
 	}
-	if cfg.Continuous.VADThreshold != 500 {
-		t.Fatalf("expected default VADThreshold=500, got %v", cfg.Continuous.VADThreshold)
+	if cfg.Continuous.VADThreshold != 0.5 {
+		t.Fatalf("expected default VADThreshold=0.5, got %v", cfg.Continuous.VADThreshold)
 	}
 	if cfg.Continuous.SilenceMs != 800 {
 		t.Fatalf("expected default SilenceMs=800, got %d", cfg.Continuous.SilenceMs)

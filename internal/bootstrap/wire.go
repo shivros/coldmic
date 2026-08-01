@@ -95,10 +95,10 @@ func Build(eventSink ports.EventSink, clipboard ports.Clipboard) (Services, erro
 		sileroVAD, createErr := audio.NewSileroVAD(modelDir, 0.5)
 		if createErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: silero VAD creation failed (%v), falling back to energy VAD\n", createErr)
-			vad = audio.NewEnergyVAD(cfg.Continuous.VADThreshold)
+			vad = audio.NewEnergyVAD(500)
 		} else if initErr := sileroVAD.Init(); initErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: silero VAD init failed (%v), falling back to energy VAD\n", initErr)
-			vad = audio.NewEnergyVAD(cfg.Continuous.VADThreshold)
+			vad = audio.NewEnergyVAD(500)
 		} else {
 			vad = sileroVAD
 		}

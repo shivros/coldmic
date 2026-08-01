@@ -9,9 +9,9 @@
 
 ## Phase 1: Bug Fixes
 
-- [ ] Commit fix: `continuous_listener.go` — use `l.cfg.VADThreshold` instead of hardcoded `0.5` (line 404)
-- [ ] Commit fix: `config.go` — default `vad_threshold: 0.5` instead of `500` (line 943)
-- [ ] Verify `cargo test` equivalent: `go test ./internal/usecase/ ./internal/config/` passes
+- [x] Commit fix: `continuous_listener.go` — use `l.cfg.VADThreshold` instead of hardcoded `0.5` (line 404)
+- [x] Commit fix: `config.go` — default `vad_threshold: 0.5` instead of `500` (line 943)
+- [x] Verify `cargo test` equivalent: `go test ./internal/usecase/ ./internal/config/` passes
 
 ## Phase 2: Harness Implementation
 
