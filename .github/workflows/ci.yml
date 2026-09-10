@@ -50,6 +50,25 @@ jobs:
       - name: Verify CI contract targets
         run: make verify-ci-contract
 
+  creed:
+    name: Creed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Install Creed
+        run: go install github.com/techgodhq/creed@v0.3.0
+
+      - name: Verify generated agent context is current
+        run: '"$(go env GOPATH)/bin/creed" diff'
+
   go-quality:
     name: Go Quality
     runs-on: ubuntu-latest
