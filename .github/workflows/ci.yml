@@ -67,7 +67,7 @@ jobs:
         run: go install github.com/techgodhq/creed@v0.3.0
 
       - name: Verify generated agent context is current
-        run: $(go env GOPATH)/bin/creed diff
+        run: '"$(go env GOPATH)/bin/creed" diff'
 
   go-quality:
     name: Go Quality
